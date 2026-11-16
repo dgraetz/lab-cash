@@ -37,10 +37,6 @@ MAIL_SECRET <- Sys.getenv("REGISTER_MAIL_SECRET")
 
 EMAIL_READY <- nzchar(MAIL_URL) && nzchar(MAIL_SECRET)
 
-# The address filled in until the lab manager saves a different one.
-# Kept in .Renviron (REGISTER_DEFAULT_EMAIL=...) so it isn't published on GitHub.
-DEFAULT_EMAIL <- Sys.getenv("REGISTER_DEFAULT_EMAIL")
-
 # The columns of the alert-settings table (it only ever has one row).
 #   total_on       - TRUE: email when the total drops below `below`
 #   bills_on       - TRUE: email when a bill type is at or below its limit
@@ -72,7 +68,7 @@ read_alert_settings <- function(table, bill_cols = character()) {
 
   sent <- get("sent")
   list(
-    email       = if (is.na(email) || email == "") DEFAULT_EMAIL else email,
+    email       = if (is.na(email)) "" else email,
     total_on    = total_on,
     below       = below,
     bills_on    = length(bill_cols) > 0 && bills_on,
@@ -224,7 +220,7 @@ alert_server <- function(input, output, session, table, is_manager, bills = NULL
         "Email sending isn't set up yet, so no emails will go out.",
         "See EMAIL_SETUP.md in the app folder."),
       textInput("alert_email", "Send it to (separate several addresses with commas)",
-                value = s$email, placeholder = "lab.manager@uoregon.edu", width = "100%"),
+                value = s$email, width = "100%"),
       p(class = "muted", "Tick what should trigger an email. Leave both unticked for no emails."),
       checkboxInput("alert_total_on", paste0("Email when the total drops below (", CURRENCY, ")"),
                     value = s$total_on, width = "100%"),

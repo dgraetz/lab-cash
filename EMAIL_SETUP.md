@@ -8,8 +8,7 @@ everything else works without it.
 In the app, expand the **Lab manager** panel, enter the PIN, and go to
 **Low-balance emails** at the bottom:
 
-1. Check the address. Until something else is saved, it shows the default from
-   `.Renviron` (`REGISTER_DEFAULT_EMAIL=...`). Separate several addresses with commas.
+1. Enter the address. Separate several addresses with commas.
 2. Tick what should trigger an email (one, both, or neither):
    - **Email when the total drops below** a dollar amount, e.g. `100`.
    - In the bills version, **Email when this many bills or fewer are left**, with a
