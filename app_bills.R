@@ -515,6 +515,7 @@ server <- function(input, output, session) {
       hr(),
       h5(class = "panel-heading", "Recount history"),
       tableOutput("count_table"),
+      uiOutput("history_pager"),
       hr(),
       h5(class = "panel-heading", "Fix a mistake"),
       numericInput("delete_id", "Delete payout number #", value = NA, min = 1),
@@ -568,6 +569,7 @@ server <- function(input, output, session) {
       note       = trimws(input$count_note)
     )
     if (!storage_append(COUNTS, new_row)) return()
+    history_page(1)                   # show the newest recounts again
     refresh(refresh() + 1)
     showNotification(paste("Register set to", money(new_row$amount)), type = "message")
     for (bill in BILLS) updateNumericInput(session, paste0("counted_", bill), value = NA)
@@ -591,10 +593,39 @@ server <- function(input, output, session) {
 
 
   # -- 4f. History of recounts ------------------------------------------------
+  # Shown 10 at a time, newest first. Page 1 = the 10 most recent recounts.
+  HISTORY_PER_PAGE <- 10
+  history_page <- reactiveVal(1)
+
+  # How many pages there are, and the page to show (never past the last one)
+  history_pages <- reactive(max(1, ceiling(nrow(counts()) / HISTORY_PER_PAGE)))
+  shown_page    <- reactive(min(history_page(), history_pages()))
+
+  observeEvent(input$history_older, history_page(min(shown_page() + 1, history_pages())))
+  observeEvent(input$history_newer, history_page(max(shown_page() - 1, 1)))
+
+  # "Showing 11-20 of 34" with Newer / Older buttons (only when there's more than one page)
+  output$history_pager <- renderUI({
+    n <- nrow(counts())
+    if (n <= HISTORY_PER_PAGE) return(NULL)
+    page  <- shown_page()
+    first <- (page - 1) * HISTORY_PER_PAGE + 1
+    last  <- min(page * HISTORY_PER_PAGE, n)
+    div(style = "display: flex; align-items: center; gap: 12px; flex-wrap: wrap;",
+      actionButton("history_newer", "‹ Newer", class = "btn-outline-secondary btn-sm",
+                   disabled = if (page == 1) "disabled"),
+      span(class = "muted", paste0("Showing ", first, "–", last, " of ", n)),
+      actionButton("history_older", "Older ›", class = "btn-outline-secondary btn-sm",
+                   disabled = if (page == history_pages()) "disabled")
+    )
+  })
+
   output$count_table <- renderTable({
     c <- counts()
     if (nrow(c) == 0) return(data.frame(Note = "No recounts yet."))
     c <- c[nrow(c):1, ]                                        # newest first
+    rows <- ((shown_page() - 1) * HISTORY_PER_PAGE + 1):min(shown_page() * HISTORY_PER_PAGE, nrow(c))
+    c <- c[rows, ]                                             # just this page
     data.frame(
       When       = c$counted_at,
       Bills      = apply(c[BILL_COLS], 1, bills_text),
