@@ -163,7 +163,11 @@ bill_stepper <- function(bill) {
       span(class = "bill-word", bill_words(bill)),
       div(class = "stepper",
         actionButton(paste0("minus_", bill), "−", class = "btn-outline-secondary btn-step"),
-        span(class = "bill-count", textOutput(paste0("count_", bill), inline = TRUE)),
+        # The number of bills: a box you can also click and type into
+        tags$input(id = paste0("count_", bill), type = "number", class = "bill-count",
+                   value = 0, min = 0, step = 1, inputmode = "numeric",
+                   `aria-label` = paste0("Number of ", CURRENCY, bill, " bills"),
+                   onfocus = "this.select()"),
         actionButton(paste0("plus_", bill), "+", class = "btn-outline-secondary btn-step")
       )
     )
@@ -248,8 +252,16 @@ ui <- page_fluid(
     .bill-word { font-family: 'Cinzel', Georgia, serif; font-weight: 700;
       font-size: 0.58rem; letter-spacing: .12em; text-align: center; }
     .stepper   { display: flex; align-items: center; gap: 6px; }
+    /* the count box: looks like plain text, shows a frame when you point at it */
     .bill-count{ font-family: 'IBM Plex Mono', monospace; font-size: 1.05rem;
-                 font-weight: 600; width: 1.6rem; text-align: center; }
+                 font-weight: 600; width: 2.6rem; text-align: center; padding: 1px 0;
+                 color: var(--ink); background: transparent;
+                 border: 1px solid transparent; border-radius: 4px;
+                 -moz-appearance: textfield; appearance: textfield; }
+    .bill-count:hover { border-color: rgba(47,90,69,.4); background: rgba(255,255,255,.6); }
+    .bill-count:focus { outline: none; border-color: var(--ink); background: #fff; }
+    .bill-count::-webkit-outer-spin-button,
+    .bill-count::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     .btn-step  { width: 1.9rem; font-size: 0.95rem; line-height: 1.5; padding: 0; background: #fff;
                  border-color: rgba(47,90,69,.5); color: var(--ink); }
     .btn-step:hover { background: var(--ink); color: #fff; }
@@ -281,7 +293,7 @@ ui <- page_fluid(
     # Right: the form RAs use
     card(
       card_header("Record a payout"),
-      p(class = "muted", "Click + for each bill you took out."),
+      p(class = "muted", "Click + / − for each bill you took out, or click the number and type it."),
       div(class = "bill-grid", lapply(BILLS, bill_stepper)),
       div(class = "payout-total", textOutput("payout_total", inline = TRUE)),
       dateInput("date", "Date paid out"),
@@ -372,24 +384,39 @@ server <- function(input, output, session) {
   })
 
 
-  # -- 4b. The + / - buttons --------------------------------------------------
-  # For each bill type, make one observer for "+" and one for "-".
+  # -- 4b. The + / - buttons and the count boxes ---------------------------------
+  # Set how many of bill number i are picked, and show it in its count box
+  set_count <- function(i, n) {
+    p <- picked()
+    p[i] <- max(0, n)                 # never below zero
+    picked(p)
+    updateNumericInput(session, paste0("count_", BILLS[i]), value = unname(p[i]))
+  }
+
+  # Back to zero for every bill (after a payout is saved)
+  clear_form <- function() {
+    picked(setNames(rep(0, length(BILLS)), BILL_COLS))
+    for (bill in BILLS) updateNumericInput(session, paste0("count_", bill), value = 0)
+  }
+
+  # For each bill type: "+", "-", and typing a number into the count box
   lapply(seq_along(BILLS), function(i) {
     bill <- BILLS[i]
+    box  <- paste0("count_", bill)
 
-    observeEvent(input[[paste0("plus_", bill)]], {
-      p <- picked()
-      p[i] <- p[i] + 1
-      picked(p)
-    })
+    observeEvent(input[[paste0("plus_", bill)]],  set_count(i, picked()[i] + 1))
+    observeEvent(input[[paste0("minus_", bill)]], set_count(i, picked()[i] - 1))
 
-    observeEvent(input[[paste0("minus_", bill)]], {
-      p <- picked()
-      p[i] <- max(0, p[i] - 1)        # never go below zero
-      picked(p)
-    })
-
-    output[[paste0("count_", bill)]] <- renderText(picked()[i])
+    observeEvent(input[[box]], {
+      typed <- input[[box]]
+      if (is.null(typed) || is.na(typed)) {           # box is empty (still typing): count as 0
+        n <- 0
+      } else {
+        n <- max(0, floor(typed + 0.5))               # whole number, 0 or more
+        if (n != typed) updateNumericInput(session, box, value = n)   # e.g. -3 -> 0, 2.6 -> 3
+      }
+      if (picked()[i] != n) { p <- picked(); p[i] <- n; picked(p) }
+    }, ignoreNULL = FALSE)
 
     # Tell the page how many of this bill are picked, so it can outline the note
     observe(session$sendCustomMessage("bill-count", list(bill = bill, n = picked()[[i]])))
@@ -442,7 +469,7 @@ server <- function(input, output, session) {
     refresh(refresh() + 1)
 
     showNotification(paste("Recorded", money(new_row$amount)), type = "message")
-    picked(setNames(rep(0, length(BILLS)), BILL_COLS))   # clear the form
+    clear_form()
 
     # Email the lab manager if this payout made the register run low
     check_alerts(ALERTS, s$balance - new_row$amount, s$period, left = s$left - p,
