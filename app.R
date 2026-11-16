@@ -51,9 +51,11 @@ today    <- function() as.Date(format(Sys.time(), "%Y-%m-%d", tz = TIME_ZONE))
 LOW_SHARE <- 0.2    # warn when less than 20 % of the counted amount is left
 
 # Where the data is saved (Google Sheet or CSV files) is set in storage.R.
-source("storage.R")
+source("storage.R", local = TRUE)
+source("alerts.R", local = TRUE)    # the optional low-balance email
 PAYOUTS <- "payouts"   # name of the payouts table (sheet tab / CSV file)
 COUNTS  <- "counts"    # name of the recounts table
+ALERTS  <- "alerts"    # name of the low-balance email settings table
 
 
 # ---- 2. Helper functions for reading and writing the CSV files ---------------
@@ -62,6 +64,7 @@ COUNTS  <- "counts"    # name of the recounts table
 setup_tables <- function() {
   storage_create(PAYOUTS, c("id", "entered_at", "date", "amount", "period"))
   storage_create(COUNTS,  c("period", "counted_at", "amount", "expected", "note"))
+  storage_create(ALERTS,  ALERT_COLUMNS)
 }
 
 # Read a table. Everything is read as text first, then the number columns are
@@ -187,6 +190,9 @@ server <- function(input, output, session) {
   # Has this browser tab entered the manager PIN?
   is_manager <- reactiveVal(FALSE)
 
+  # The low-balance email section of the manager panel (see alerts.R)
+  alert_server(input, output, session, ALERTS, is_manager)
+
 
   # -- 4a. Balance card -------------------------------------------------------
   output$balance_box <- renderUI({
@@ -236,6 +242,9 @@ server <- function(input, output, session) {
 
     showNotification(paste("Recorded", money(new_row$amount)), type = "message")
     updateNumericInput(session, "amount", value = NA)
+
+    # Email the lab manager if this payout made the register run low
+    check_low_balance(ALERTS, s$balance - new_row$amount, s$period)
   })
 
 
@@ -263,10 +272,8 @@ server <- function(input, output, session) {
         actionButton("unlock", "Unlock")
       ))
     }
-    s <- status()
     tagList(
-      if (s$set_up) p("The app expects ", strong(money(s$balance)),
-                      " in the register. Count the cash and enter what is really there."),
+      uiOutput("expected_text"),
       numericInput("counted", paste0("Cash in the register (", CURRENCY, ")"),
                    value = NA, min = 0, step = 0.01),
       textInput("count_note", "Note (optional)",
@@ -275,8 +282,17 @@ server <- function(input, output, session) {
       hr(),
       h6("Fix a mistake"),
       numericInput("delete_id", "Delete payout number #", value = NA, min = 1),
-      actionButton("delete", "Delete payout", class = "btn-outline-danger")
+      actionButton("delete", "Delete payout", class = "btn-outline-danger"),
+      uiOutput("alert_panel")
     )
+  })
+
+  # Kept separate from the panel so the panel doesn't redraw (and clear what
+  # the manager is typing) every time the data refreshes
+  output$expected_text <- renderUI({
+    s <- status()
+    if (s$set_up) p("The app expects ", strong(money(s$balance)),
+                    " in the register. Count the cash and enter what is really there.")
   })
 
   observeEvent(input$unlock, {

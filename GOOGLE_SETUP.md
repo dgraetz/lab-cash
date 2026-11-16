@@ -56,6 +56,8 @@ Click **Publish** in RStudio. In the list of files to upload, make sure these ar
 
 - `app_bills.R` (or `app.R`)
 - `storage.R`
+- `alerts.R`
+- `www/logo.svg`
 - `google-key.json`
 - `.Renviron` (holds the sheet ID and the manager PIN)
 

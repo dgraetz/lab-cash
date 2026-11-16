@@ -58,9 +58,11 @@ BILLS     <- c(20, 10, 5, 1)  # the bill types in the register, largest first
 LOW_SHARE <- 0.2              # warn when less than 20 % of the counted total is left
 
 # Where the data is saved (Google Sheet or CSV files) is set in storage.R.
-source("storage.R")
+source("storage.R", local = TRUE)
+source("alerts.R", local = TRUE)    # the optional low-balance email
 PAYOUTS <- "bills_payouts"   # name of the payouts table (sheet tab / CSV file)
 COUNTS  <- "bills_counts"    # name of the recounts table
+ALERTS  <- "bills_alerts"    # name of the low-balance email settings table
 
 # Column names for the bill counts: "n20", "n10", "n5", "n1"
 BILL_COLS <- paste0("n", BILLS)
@@ -72,6 +74,7 @@ BILL_COLS <- paste0("n", BILLS)
 setup_tables <- function() {
   storage_create(PAYOUTS, c("id", "entered_at", "date", BILL_COLS, "amount", "period"))
   storage_create(COUNTS,  c("period", "counted_at", BILL_COLS, "amount", "expected", "note"))
+  storage_create(ALERTS,  ALERT_COLUMNS)
 }
 
 # Read a table. Everything is read as text first, then the number columns are
@@ -237,6 +240,9 @@ server <- function(input, output, session) {
   # Has this browser tab entered the manager PIN?
   is_manager <- reactiveVal(FALSE)
 
+  # The low-balance email section of the manager panel (see alerts.R)
+  alert_server(input, output, session, ALERTS, is_manager)
+
   # The bills currently picked in the payout form, e.g. c(1, 0, 1, 0)
   picked <- reactiveVal(setNames(rep(0, length(BILLS)), BILL_COLS))
 
@@ -343,6 +349,10 @@ server <- function(input, output, session) {
 
     showNotification(paste("Recorded", money(new_row$amount)), type = "message")
     picked(setNames(rep(0, length(BILLS)), BILL_COLS))   # clear the form
+
+    # Email the lab manager if this payout made the register run low
+    check_low_balance(ALERTS, s$balance - new_row$amount, s$period,
+                      details = paste("Bills that should be left:", bills_text(s$left - p)))
   })
 
 
@@ -386,7 +396,8 @@ server <- function(input, output, session) {
       hr(),
       h6("Fix a mistake"),
       numericInput("delete_id", "Delete payout number #", value = NA, min = 1),
-      actionButton("delete", "Delete payout", class = "btn-outline-danger")
+      actionButton("delete", "Delete payout", class = "btn-outline-danger"),
+      uiOutput("alert_panel")
     )
   })
 
