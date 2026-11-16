@@ -154,6 +154,9 @@ ui <- page_fluid(
     .low       { color: #b4462b; }
     .muted     { color: #6b7570; }
     .container-fluid { max-width: 1000px; padding-block: 24px; }
+    .app-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+    .app-header h2, .app-header p { margin: 0; }
+    .app-logo   { width: 96px; height: 96px; flex-shrink: 0; }
     .stepper   { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
     .bill-label{ font-family: 'IBM Plex Mono', monospace; font-weight: 600;
                  width: 3.5rem; }
@@ -166,8 +169,14 @@ ui <- page_fluid(
                  font-family: 'IBM Plex Mono', monospace; }
   ")),
 
-  h2("Lab Cash"),
-  p(class = "muted", "Record every payout from the register so the balance stays right."),
+  # Header: lab logo (from the www folder) next to the title
+  div(class = "app-header",
+    img(src = "logo.svg", alt = "Cognitive Dynamics Lab logo", class = "app-logo"),
+    div(
+      h2("Lab Cash"),
+      p(class = "muted", "Record every payout from the register so the balance stays right.")
+    )
+  ),
 
   layout_columns(
     col_widths = c(5, 7),
