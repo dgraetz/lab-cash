@@ -45,7 +45,10 @@ REFRESH_MS <- if (USE_SHEETS) 15000 else 1000
 
 if (USE_SHEETS) {
   library(googlesheets4)
-  gs4_auth(path = KEY_FILE)        # log in to Google as the service account
+  # Log in to Google as the service account. On Hugging Face the key file's
+  # contents come from the REGISTER_GOOGLE_KEY secret instead of the file.
+  key_json <- Sys.getenv("REGISTER_GOOGLE_KEY")
+  gs4_auth(path = if (nzchar(key_json)) key_json else KEY_FILE)
 } else {
   dir.create(DATA_DIR, showWarnings = FALSE)
 }

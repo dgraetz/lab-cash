@@ -54,6 +54,7 @@ LOW_SHARE <- 0.2    # warn when less than 20 % of the counted amount is left
 source("storage.R", local = TRUE)
 source("alerts.R", local = TRUE)    # the optional low-balance email
 source("idle.R", local = TRUE)      # pause the page when nobody uses it
+source("access.R", local = TRUE)    # only open through the secret link (if one is set)
 PAYOUTS <- "payouts"   # name of the payouts table (sheet tab / CSV file)
 COUNTS  <- "counts"    # name of the recounts table
 ALERTS  <- "alerts"    # name of the low-balance email settings table
@@ -371,4 +372,5 @@ server <- function(input, output, session) {
 }
 
 
-shinyApp(ui, server)
+# locked_*: only opens through the secret link, if one is set (see access.R)
+shinyApp(locked_ui(ui), locked_server(server))
