@@ -215,7 +215,7 @@ alert_server <- function(input, output, session, table, is_manager, bills = NULL
 
     tagList(
       hr(),
-      h6("Low-balance emails (optional)"),
+      h5(class = "panel-heading", "Low-balance emails (optional)"),
       if (!EMAIL_READY) p(class = "low",
         "Email sending isn't set up yet, so no emails will go out.",
         "See EMAIL_SETUP.md in the app folder."),

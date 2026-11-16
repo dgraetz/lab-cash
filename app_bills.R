@@ -149,7 +149,7 @@ bill_stepper <- function(bill) {
 
 ui <- page_fluid(
   theme = bs_theme(version = 5, primary = "#2f6b55",
-                   base_font = font_google("IBM Plex Sans"),
+                   base_font = font_google("IBM Plex Sans", wght = c(400, 700)),
                    code_font = font_google("IBM Plex Mono")),
   tags$head(tags$style("
     .balance   { font-family: 'IBM Plex Mono', monospace; font-size: 3rem;
@@ -160,6 +160,7 @@ ui <- page_fluid(
     .app-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
     .app-header h2, .app-header p { margin: 0; }
     .app-logo   { width: 96px; height: 96px; flex-shrink: 0; }
+    .panel-heading { font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; }
     .stepper   { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
     .bill-label{ font-family: 'IBM Plex Mono', monospace; font-weight: 600;
                  width: 3.5rem; }
@@ -394,7 +395,7 @@ server <- function(input, output, session) {
                 placeholder = "e.g. topped up with 200 from lab budget"),
       actionButton("recount", "Save recount", class = "btn-warning"),
       hr(),
-      h6("Fix a mistake"),
+      h5(class = "panel-heading", "Fix a mistake"),
       numericInput("delete_id", "Delete payout number #", value = NA, min = 1),
       actionButton("delete", "Delete payout", class = "btn-outline-danger"),
       uiOutput("alert_panel")
