@@ -309,11 +309,7 @@ ui <- page_fluid(
     open = FALSE,
     accordion_panel(
       "Lab manager: Reset the register",
-      uiOutput("manager_panel")
-    ),
-    accordion_panel(
-      "Recount history",
-      tableOutput("count_table")
+      uiOutput("manager_panel")      # includes the recount history (only after the PIN)
     )
   )
 )
@@ -516,6 +512,9 @@ server <- function(input, output, session) {
       textInput("count_note", "Note (optional)",
                 placeholder = "e.g. topped up with 200 from lab budget"),
       actionButton("recount", "Save recount", class = "btn-warning"),
+      hr(),
+      h5(class = "panel-heading", "Recount history"),
+      tableOutput("count_table"),
       hr(),
       h5(class = "panel-heading", "Fix a mistake"),
       numericInput("delete_id", "Delete payout number #", value = NA, min = 1),
