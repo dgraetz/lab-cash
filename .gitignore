@@ -14,3 +14,7 @@ rsconnect/
 
 # macOS
 .DS_Store
+
+# Hugging Face private notes (secret link key)
+.hf_private
+HF_SETUP_PRIVATE.md
