@@ -301,7 +301,8 @@ ui <- page_fluid(
 
   card(
     card_header("Payouts since the last recount"),
-    tableOutput("payout_table")
+    tableOutput("payout_table"),
+    uiOutput("payouts_pager")
   ),
 
   # The lab manager panel, hidden behind a PIN
@@ -461,6 +462,7 @@ server <- function(input, output, session) {
     )
     if (!storage_append(PAYOUTS, new_row)) return()
     refresh(refresh() + 1)
+    payouts_pager$reset()             # show the newest payouts again
 
     showNotification(paste("Recorded", money(new_row$amount)), type = "message")
     clear_form()
@@ -471,13 +473,53 @@ server <- function(input, output, session) {
   }))
 
 
-  # -- 4d. Table of payouts in the current period -----------------------------
+  # -- 4d. Tables shown 10 rows at a time -------------------------------------
+  # make_pager("history", count_rows) adds "‹ Newer" / "Older ›" buttons to a
+  # table, for uiOutput("history_pager"). Page 1 = the 10 newest rows.
+  #   count_rows - a function that returns how many rows the table has
+  # It returns $rows() (the row numbers to show on the current page, counting
+  # from the newest) and $reset() (go back to page 1).
+  PER_PAGE <- 10
+  make_pager <- function(id, count_rows) {
+    page  <- reactiveVal(1)
+    pages <- reactive(max(1, ceiling(count_rows() / PER_PAGE)))
+    shown <- reactive(min(page(), pages()))       # never past the last page
+
+    observeEvent(input[[paste0(id, "_older")]], page(min(shown() + 1, pages())))
+    observeEvent(input[[paste0(id, "_newer")]], page(max(shown() - 1, 1)))
+
+    # "Showing 11-20 of 34" with the buttons (only when there's more than one page)
+    output[[paste0(id, "_pager")]] <- renderUI({
+      n <- count_rows()
+      if (n <= PER_PAGE) return(NULL)
+      first <- (shown() - 1) * PER_PAGE + 1
+      last  <- min(shown() * PER_PAGE, n)
+      div(style = "display: flex; align-items: center; gap: 12px; flex-wrap: wrap;",
+        actionButton(paste0(id, "_newer"), "‹ Newer", class = "btn-outline-secondary btn-sm",
+                     disabled = if (shown() == 1) "disabled"),
+        span(class = "muted", paste0("Showing ", first, "–", last, " of ", n)),
+        actionButton(paste0(id, "_older"), "Older ›", class = "btn-outline-secondary btn-sm",
+                     disabled = if (shown() == pages()) "disabled")
+      )
+    })
+
+    list(
+      rows  = function() ((shown() - 1) * PER_PAGE + 1):min(shown() * PER_PAGE, count_rows()),
+      reset = function() page(1)
+    )
+  }
+
+
+  # -- 4e. Table of payouts in the current period -----------------------------
+  payouts_pager <- make_pager("payouts", function() { s <- status(); if (s$set_up) nrow(s$payouts) else 0 })
+
   output$payout_table <- renderTable({
     s <- status()
     if (!s$set_up || nrow(s$payouts) == 0) {
       return(data.frame(Note = "No payouts since the last recount."))
     }
     p <- s$payouts[order(s$payouts$id, decreasing = TRUE), ]   # newest first
+    p <- p[payouts_pager$rows(), ]                             # just this page
     data.frame(
       `#`    = as.integer(p$id),
       Date   = p$date,
@@ -488,7 +530,7 @@ server <- function(input, output, session) {
   }, striped = TRUE, width = "100%")
 
 
-  # -- 4e. Lab manager panel --------------------------------------------------
+  # -- 4f. Lab manager panel --------------------------------------------------
   output$manager_panel <- renderUI({
     if (!is_manager()) {
       return(tagList(
@@ -569,7 +611,8 @@ server <- function(input, output, session) {
       note       = trimws(input$count_note)
     )
     if (!storage_append(COUNTS, new_row)) return()
-    history_page(1)                   # show the newest recounts again
+    history$reset()                   # show the newest recounts again
+    payouts_pager$reset()
     refresh(refresh() + 1)
     showNotification(paste("Register set to", money(new_row$amount)), type = "message")
     for (bill in BILLS) updateNumericInput(session, paste0("counted_", bill), value = NA)
@@ -592,40 +635,15 @@ server <- function(input, output, session) {
   }))
 
 
-  # -- 4f. History of recounts ------------------------------------------------
-  # Shown 10 at a time, newest first. Page 1 = the 10 most recent recounts.
-  HISTORY_PER_PAGE <- 10
-  history_page <- reactiveVal(1)
-
-  # How many pages there are, and the page to show (never past the last one)
-  history_pages <- reactive(max(1, ceiling(nrow(counts()) / HISTORY_PER_PAGE)))
-  shown_page    <- reactive(min(history_page(), history_pages()))
-
-  observeEvent(input$history_older, history_page(min(shown_page() + 1, history_pages())))
-  observeEvent(input$history_newer, history_page(max(shown_page() - 1, 1)))
-
-  # "Showing 11-20 of 34" with Newer / Older buttons (only when there's more than one page)
-  output$history_pager <- renderUI({
-    n <- nrow(counts())
-    if (n <= HISTORY_PER_PAGE) return(NULL)
-    page  <- shown_page()
-    first <- (page - 1) * HISTORY_PER_PAGE + 1
-    last  <- min(page * HISTORY_PER_PAGE, n)
-    div(style = "display: flex; align-items: center; gap: 12px; flex-wrap: wrap;",
-      actionButton("history_newer", "‹ Newer", class = "btn-outline-secondary btn-sm",
-                   disabled = if (page == 1) "disabled"),
-      span(class = "muted", paste0("Showing ", first, "–", last, " of ", n)),
-      actionButton("history_older", "Older ›", class = "btn-outline-secondary btn-sm",
-                   disabled = if (page == history_pages()) "disabled")
-    )
-  })
+  # -- 4g. History of recounts ------------------------------------------------
+  # Shown 10 at a time, newest first (see make_pager above).
+  history <- make_pager("history", function() nrow(counts()))
 
   output$count_table <- renderTable({
     c <- counts()
     if (nrow(c) == 0) return(data.frame(Note = "No recounts yet."))
     c <- c[nrow(c):1, ]                                        # newest first
-    rows <- ((shown_page() - 1) * HISTORY_PER_PAGE + 1):min(shown_page() * HISTORY_PER_PAGE, nrow(c))
-    c <- c[rows, ]                                             # just this page
+    c <- c[history$rows(), ]                                   # just this page
     data.frame(
       When       = c$counted_at,
       Bills      = apply(c[BILL_COLS], 1, bills_text),
