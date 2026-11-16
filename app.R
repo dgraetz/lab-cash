@@ -130,7 +130,10 @@ ui <- page_fluid(
 
   # Header: lab logo (from the www folder) next to the title
   div(class = "app-header",
-    img(src = "logo.svg", alt = "Cognitive Dynamics Lab logo", class = "app-logo"),
+    # The logo links to the lab website (opens in a new tab)
+    tags$a(href = "https://blogs.uoregon.edu/cognitivedynamics/", target = "_blank",
+           rel = "noopener", title = "Cognitive Dynamics Lab website",
+           img(src = "logo.svg", alt = "Cognitive Dynamics Lab logo", class = "app-logo")),
     div(
       h2("Lab Cash"),
       p(class = "muted", "Record every payout from the register so the balance stays right.")
