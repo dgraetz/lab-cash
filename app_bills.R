@@ -167,7 +167,7 @@ ui <- page_fluid(
     .app-logo   { width: 96px; height: 96px; flex-shrink: 0; }
     .panel-heading { font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; }
     /* The bills in the payout form, drawn like banknotes */
-    .bill-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+    .bill-grid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 8px; }
     .bill-note { position: relative; width: 220px; max-width: 100%;
                  aspect-ratio: 2.35 / 1;              /* a US bill is 6.14 x 2.61 in */
                  background: #eef3ea; color: #2f4f3f;
