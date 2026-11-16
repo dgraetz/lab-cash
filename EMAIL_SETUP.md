@@ -8,12 +8,14 @@ everything else works without it.
 In the app, expand the **Lab manager** panel, enter the PIN, and go to
 **Low-balance emails** at the bottom:
 
-1. Tick **Send me an email when the register runs low**.
-2. Enter the address. Separate several addresses with commas.
-3. Fill in the limits you want and leave the others empty:
+1. Check the address. Until something else is saved, it shows the default from
+   `.Renviron` (`REGISTER_DEFAULT_EMAIL=...`). Separate several addresses with commas.
+2. Tick what should trigger an email (one, both, or neither):
    - **Email when the total drops below** a dollar amount, e.g. `100`.
-   - In the bills version, also **per bill type**: e.g. `20` under **$1 bills**
-     means "email me when 20 or fewer $1 bills are left".
+   - In the bills version, **Email when this many bills or fewer are left**, with a
+     number per bill type: e.g. `20` under **$1 bills** means "email me when 20 or
+     fewer $1 bills are left". Leave a bill empty if it shouldn't trigger an email.
+3. Leave both unticked for no emails.
 4. Click **Save email settings**, then **Send a test email** to check that it arrives.
    Check the spam folder the first time.
 

@@ -37,14 +37,19 @@ MAIL_SECRET <- Sys.getenv("REGISTER_MAIL_SECRET")
 
 EMAIL_READY <- nzchar(MAIL_URL) && nzchar(MAIL_SECRET)
 
+# The address filled in until the lab manager saves a different one.
+# Kept in .Renviron (REGISTER_DEFAULT_EMAIL=...) so it isn't published on GitHub.
+DEFAULT_EMAIL <- Sys.getenv("REGISTER_DEFAULT_EMAIL")
+
 # The columns of the alert-settings table (it only ever has one row).
-#   below          - email when the total balance drops below this (empty = off)
-#   below_n20, ... - email when this many or fewer of that bill are left
-#                    (only in the bills version; empty = off)
+#   total_on       - TRUE: email when the total drops below `below`
+#   bills_on       - TRUE: email when a bill type is at or below its limit
+#                    (only in the bills version)
+#   below_n20, ... - the limit for each bill type (empty = no limit for that bill)
 #   sent_period    - the period in which emails were last sent
 #   sent           - which alerts were already sent in that period, e.g. "balance,n1"
 alert_columns <- function(bill_cols = character()) {
-  c("enabled", "email", "below", paste0("below_", bill_cols), "sent_period", "sent")
+  c("email", "total_on", "below", "bills_on", paste0("below_", bill_cols), "sent_period", "sent")
 }
 
 
@@ -56,21 +61,32 @@ read_alert_settings <- function(table, bill_cols = character()) {
   get <- function(col) if (nrow(d) > 0 && col %in% names(d)) d[[col]][1] else NA
   num <- function(col) suppressWarnings(as.numeric(get(col)))
 
+  below      <- num("below")
+  bill_below <- vapply(bill_cols, function(b) num(paste0("below_", b)), numeric(1))
+  email      <- get("email")
+
+  # Settings saved by the older version had one "enabled" box for everything
+  old_enabled <- identical(get("enabled"), "TRUE")
+  total_on <- if ("total_on" %in% names(d)) identical(get("total_on"), "TRUE") else old_enabled && !is.na(below)
+  bills_on <- if ("bills_on" %in% names(d)) identical(get("bills_on"), "TRUE") else old_enabled && any(!is.na(bill_below))
+
   sent <- get("sent")
   list(
-    enabled     = identical(get("enabled"), "TRUE"),
-    email       = if (is.na(get("email"))) "" else get("email"),
-    below       = num("below"),
-    bill_below  = vapply(bill_cols, function(b) num(paste0("below_", b)), numeric(1)),
+    email       = if (is.na(email) || email == "") DEFAULT_EMAIL else email,
+    total_on    = total_on,
+    below       = below,
+    bills_on    = length(bill_cols) > 0 && bills_on,
+    bill_below  = bill_below,
     sent_period = num("sent_period"),
     sent        = if (is.na(sent) || sent == "") character() else strsplit(sent, ",")[[1]]
   )
 }
 
 save_alert_settings <- function(table, settings) {
-  row <- data.frame(enabled = as.character(settings$enabled),
-                    email   = settings$email,
-                    below   = settings$below)
+  row <- data.frame(email    = settings$email,
+                    total_on = as.character(settings$total_on),
+                    below    = settings$below,
+                    bills_on = as.character(settings$bills_on))
   for (b in names(settings$bill_below)) row[[paste0("below_", b)]] <- settings$bill_below[[b]]
   row$sent_period <- settings$sent_period
   row$sent        <- paste(settings$sent, collapse = ",")
@@ -125,20 +141,20 @@ send_email <- function(to, subject, body, dry_run = FALSE) {
 #   details  - extra lines for the email body
 check_alerts <- function(table, balance, period, left = NULL, details = character()) {
   s <- read_alert_settings(table, names(left))
-  if (!s$enabled) return(invisible())
+  if (!s$total_on && !s$bills_on) return(invisible())   # both boxes unticked
 
   # Alerts already emailed since the last recount aren't sent again
   already <- if (identical(s$sent_period, period)) s$sent else character()
 
-  # Collect every rule that is now broken and hasn't been emailed yet
+  # Collect every ticked rule that is now broken and hasn't been emailed yet
   triggered <- list()
-  if (!is.na(s$below) && balance < s$below && !("balance" %in% already)) {
+  if (s$total_on && !is.na(s$below) && balance < s$below && !("balance" %in% already)) {
     triggered$balance <- paste0("The total is down to ", money(balance),
                                 " (your limit: below ", money(s$below), ").")
   }
   for (b in names(s$bill_below)) {
     limit <- s$bill_below[[b]]
-    if (!is.na(limit) && left[[b]] <= limit && !(b %in% already)) {
+    if (s$bills_on && !is.na(limit) && left[[b]] <= limit && !(b %in% already)) {
       triggered[[b]] <- paste0("Only ", left[[b]], " × ", CURRENCY, sub("^n", "", b),
                                if (left[[b]] == 1) " bill" else " bills",
                                " left (your limit: ", limit, " or fewer).")
@@ -207,14 +223,17 @@ alert_server <- function(input, output, session, table, is_manager, bills = NULL
       if (!EMAIL_READY) p(class = "low",
         "Email sending isn't set up yet, so no emails will go out.",
         "See EMAIL_SETUP.md in the app folder."),
-      checkboxInput("alert_on", "Send me an email when the register runs low", value = s$enabled),
       textInput("alert_email", "Send it to (separate several addresses with commas)",
-                value = s$email, placeholder = "lab.manager@uoregon.edu"),
-      p(class = "muted", "Fill in the limits you want and leave the others empty."),
-      numericInput("alert_below", paste0("Email when the total drops below (", CURRENCY, ")"),
-                   value = s$below, min = 0, step = 1),
+                value = s$email, placeholder = "lab.manager@uoregon.edu", width = "100%"),
+      p(class = "muted", "Tick what should trigger an email. Leave both unticked for no emails."),
+      checkboxInput("alert_total_on", paste0("Email when the total drops below (", CURRENCY, ")"),
+                    value = s$total_on, width = "100%"),
+      numericInput("alert_below", NULL, value = s$below, min = 0, step = 1),
       if (length(bill_cols) > 0) tagList(
-        p(style = "margin-bottom: 4px;", "Email when this many bills or fewer are left:"),
+        checkboxInput("alert_bills_on", "Email when this many bills or fewer are left:",
+                      value = s$bills_on, width = "100%"),
+        p(class = "muted", style = "margin-bottom: 4px;",
+          "Leave a bill empty if it shouldn't trigger an email."),
         do.call(layout_columns, c(list(col_widths = rep(3, length(bill_cols))), bill_boxes))
       ),
       div(style = "display: flex; gap: 8px; flex-wrap: wrap;",
@@ -236,17 +255,18 @@ alert_server <- function(input, output, session, table, is_manager, bills = NULL
   form_problem <- function() {
     emails <- split_emails(input$alert_email)
     limits <- form_bill_limits()
+    total_on <- isTRUE(input$alert_total_on)
+    bills_on <- isTRUE(input$alert_bills_on)
     if (length(emails) > 0 && !all(looks_like_email(emails)))
       return("One of the email addresses doesn't look right.")
-    if (!is.na(input$alert_below) && input$alert_below <= 0)
-      return("The total limit has to be above zero (or leave it empty).")
+    if (total_on && (is.na(input$alert_below) || input$alert_below <= 0))
+      return("Enter the total (above zero) that should trigger an email, or untick that box.")
     if (any(!is.na(limits) & (limits < 0 | limits != round(limits))))
       return("Bill limits have to be whole numbers, 0 or more (or leave them empty).")
-    if (input$alert_on) {
-      if (length(emails) == 0) return("Enter an email address.")
-      if (is.na(input$alert_below) && all(is.na(limits)))
-        return("Fill in at least one limit, or untick the email box.")
-    }
+    if (bills_on && all(is.na(limits)))
+      return("Fill in a limit for at least one bill, or untick that box.")
+    if ((total_on || bills_on) && length(emails) == 0)
+      return("Enter an email address.")
     NULL
   }
 
@@ -256,13 +276,14 @@ alert_server <- function(input, output, session, table, is_manager, bills = NULL
     if (!is.null(problem)) return(showNotification(problem, type = "error"))
 
     s <- settings()
-    s$enabled    <- input$alert_on
     s$email      <- paste(split_emails(input$alert_email), collapse = ", ")
+    s$total_on   <- isTRUE(input$alert_total_on)
     s$below      <- input$alert_below
+    s$bills_on   <- isTRUE(input$alert_bills_on)
     s$bill_below <- form_bill_limits()
     if (save_alert_settings(table, s)) {
       settings(s)
-      showNotification(if (s$enabled) "Email settings saved." else "Low-balance emails turned off.",
+      showNotification(if (s$total_on || s$bills_on) "Email settings saved." else "Low-balance emails turned off.",
                        type = "message")
     }
   })
