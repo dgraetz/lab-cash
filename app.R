@@ -40,6 +40,14 @@ library(bslib)
 MANAGER_PIN <- Sys.getenv("REGISTER_MANAGER_PIN")
 
 CURRENCY  <- "$"    # shown in front of every amount, e.g. "€" or "$"
+
+# All dates and times are shown in this time zone. (shinyapps.io servers run on
+# UTC, so without this the times would be 7-8 hours ahead.)
+TIME_ZONE <- "America/Los_Angeles"   # Pacific time
+
+# The current time / date in TIME_ZONE, e.g. "2026-11-15 17:45" / 2026-11-15
+now_text <- function() format(Sys.time(), "%Y-%m-%d %H:%M", tz = TIME_ZONE)
+today    <- function() as.Date(format(Sys.time(), "%Y-%m-%d", tz = TIME_ZONE))
 LOW_SHARE <- 0.2    # warn when less than 20 % of the counted amount is left
 
 # Where the data is saved (Google Sheet or CSV files) is set in storage.R.
@@ -126,7 +134,7 @@ ui <- page_fluid(
       card_header("Record a payout"),
       numericInput("amount", paste0("Amount (", CURRENCY, ")"),
                    value = NA, min = 0, step = 0.01),
-      dateInput("date", "Date paid out", value = Sys.Date()),
+      dateInput("date", "Date paid out"),
       actionButton("add", "Record payout", class = "btn-primary")
     )
   ),
@@ -163,6 +171,9 @@ server <- function(input, output, session) {
   counts  <- reactive({ refresh(); invalidateLater(REFRESH_MS); read_table(COUNTS) })
 
   status <- reactive(register_status(payouts(), counts()))
+
+  # Start the date box on today's date (Pacific time) for each visitor
+  updateDateInput(session, "date", value = today())
 
   # Has this browser tab entered the manager PIN?
   is_manager <- reactiveVal(FALSE)
@@ -206,7 +217,7 @@ server <- function(input, output, session) {
 
     new_row <- data.frame(
       id         = if (nrow(all_payouts) == 0) 1 else max(all_payouts$id) + 1,
-      entered_at = format(Sys.time(), "%Y-%m-%d %H:%M"),
+      entered_at = now_text(),
       date       = format(input$date),
       amount     = round(input$amount, 2),
       period     = s$period
@@ -280,7 +291,7 @@ server <- function(input, output, session) {
     s <- register_status(read_table(PAYOUTS), read_table(COUNTS))
     new_row <- data.frame(
       period     = if (s$set_up) s$period + 1 else 1,
-      counted_at = format(Sys.time(), "%Y-%m-%d %H:%M"),
+      counted_at = now_text(),
       amount     = round(input$counted, 2),
       expected   = if (s$set_up) s$balance else NA,
       note       = trimws(input$count_note)
