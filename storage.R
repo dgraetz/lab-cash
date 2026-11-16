@@ -80,10 +80,13 @@ storage_create <- function(name, columns) {
 storage_read <- function(name) {
   if (USE_SHEETS) {
     d <- try_twice(function() read_sheet(SHEET_ID, sheet = name, col_types = "c"))
-    as.data.frame(d)
+    d <- as.data.frame(d)
   } else {
-    read.csv(csv_path(name), stringsAsFactors = FALSE, colClasses = "character")
+    d <- read.csv(csv_path(name), stringsAsFactors = FALSE, colClasses = "character")
   }
+  # Skip rows that are completely empty. They appear when someone clears rows in
+  # the Google Sheet instead of deleting them, and would otherwise break the app.
+  d[rowSums(!is.na(d) & d != "") > 0, , drop = FALSE]
 }
 
 # Add one row (a one-row data frame) to the end of a table.
