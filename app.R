@@ -53,6 +53,7 @@ LOW_SHARE <- 0.2    # warn when less than 20 % of the counted amount is left
 # Where the data is saved (Google Sheet or CSV files) is set in storage.R.
 source("storage.R", local = TRUE)
 source("alerts.R", local = TRUE)    # the optional low-balance email
+source("idle.R", local = TRUE)      # pause the page when nobody uses it
 PAYOUTS <- "payouts"   # name of the payouts table (sheet tab / CSV file)
 COUNTS  <- "counts"    # name of the recounts table
 ALERTS  <- "alerts"    # name of the low-balance email settings table
@@ -69,8 +70,10 @@ setup_tables <- function() {
 
 # Read a table. Everything is read as text first, then the number columns are
 # turned into numbers. (This keeps an empty table from breaking the sums.)
-read_table <- function(name) {
-  d <- storage_read(name)
+# fresh = TRUE reads straight from the sheet (use it right before saving);
+# otherwise the shared copy is used (see storage.R).
+read_table <- function(name, fresh = FALSE) {
+  d <- if (fresh) storage_read(name) else storage_read_shared(name)
   for (col in intersect(names(d), c("id", "amount", "expected", "period"))) {
     d[[col]] <- as.numeric(d[[col]])
   }
@@ -109,6 +112,7 @@ setup_tables()
 # ---- 3. The user interface ---------------------------------------------------
 
 ui <- page_fluid(
+  idle_ui(),                       # pause the page when nobody uses it (idle.R)
   theme = bs_theme(version = 5, primary = "#2f6b55",
                    base_font = font_google("IBM Plex Sans", wght = c(400, 700)),
                    code_font = font_google("IBM Plex Mono")),
@@ -191,6 +195,9 @@ server <- function(input, output, session) {
   # Has this browser tab entered the manager PIN?
   is_manager <- reactiveVal(FALSE)
 
+  # Pause this page after a few minutes without use (see idle.R)
+  idle_server(input, session, is_manager)
+
   # The low-balance email section of the manager panel (see alerts.R)
   alert_server(input, output, session, ALERTS, is_manager)
 
@@ -214,11 +221,11 @@ server <- function(input, output, session) {
 
 
   # -- 4b. Recording a payout -------------------------------------------------
-  observeEvent(input$add, {
-    # Read the files fresh (not the 1-second cached copy) so two people saving
+  observeEvent(input$add, try_or_tell("save the payout", {
+    # Read the data fresh (not the shared copy) so two people saving
     # at the same moment don't get the same payout number.
-    all_payouts <- read_table(PAYOUTS)
-    s <- register_status(all_payouts, read_table(COUNTS))
+    all_payouts <- read_table(PAYOUTS, fresh = TRUE)
+    s <- register_status(all_payouts, read_table(COUNTS, fresh = TRUE))
 
     # Check the form before saving anything
     problem <- NULL
@@ -246,7 +253,7 @@ server <- function(input, output, session) {
 
     # Email the lab manager if this payout made the register run low
     check_alerts(ALERTS, s$balance - new_row$amount, s$period)
-  })
+  }))
 
 
   # -- 4c. Table of payouts in the current period -----------------------------
@@ -308,13 +315,13 @@ server <- function(input, output, session) {
   })
 
   # Saving a recount starts a new period with the counted amount
-  observeEvent(input$recount, {
+  observeEvent(input$recount, try_or_tell("save the recount", {
     req(is_manager())
     if (is.na(input$counted) || input$counted < 0) {
       showNotification("Enter the amount you counted (0 or more).", type = "error")
       return()
     }
-    s <- register_status(read_table(PAYOUTS), read_table(COUNTS))
+    s <- register_status(read_table(PAYOUTS, fresh = TRUE), read_table(COUNTS, fresh = TRUE))
     new_row <- data.frame(
       period     = if (s$set_up) s$period + 1 else 1,
       counted_at = now_text(),
@@ -327,12 +334,12 @@ server <- function(input, output, session) {
     showNotification(paste("Register set to", money(new_row$amount)), type = "message")
     updateNumericInput(session, "counted", value = NA)
     updateTextInput(session, "count_note", value = "")
-  })
+  }))
 
   # Deleting rewrites the payouts table without that one row
-  observeEvent(input$delete, {
+  observeEvent(input$delete, try_or_tell("delete the payout", {
     req(is_manager())
-    all_payouts <- read_table(PAYOUTS)
+    all_payouts <- read_table(PAYOUTS, fresh = TRUE)
     if (is.na(input$delete_id) || !(input$delete_id %in% all_payouts$id)) {
       showNotification("No payout with that number.", type = "error")
       return()
@@ -342,7 +349,7 @@ server <- function(input, output, session) {
     refresh(refresh() + 1)
     showNotification(paste0("Deleted payout #", input$delete_id), type = "message")
     updateNumericInput(session, "delete_id", value = NA)
-  })
+  }))
 
 
   # -- 4e. History of recounts ------------------------------------------------

@@ -106,6 +106,7 @@ storage_append <- function(name, row) {
     showNotification("Couldn't save. Check the internet connection and try again.",
                      type = "error")
   }
+  storage_forget(name)          # the shared copy is out of date now
   saved
 }
 
@@ -129,5 +130,57 @@ storage_replace <- function(name, data) {
     showNotification("Couldn't save. Check the internet connection and try again.",
                      type = "error")
   }
+  storage_forget(name)          # the shared copy is out of date now
   saved
+}
+
+
+# ---- One shared copy of the data for everyone --------------------------------
+#
+# Google allows only a limited number of reads per minute. If every open
+# browser tab read the sheet itself, a few open tabs would hit that limit.
+# So the app keeps ONE copy of each table in memory, shared by everyone who
+# has the app open, and re-reads it from the sheet at most once every
+# REFRESH_MS. If Google can't be reached, everyone keeps seeing the last copy.
+#
+# Use storage_read_shared() for showing data, and storage_read() (always
+# fresh) right before saving something.
+
+shared_copy <- new.env()
+
+storage_read_shared <- function(name) {
+  copy <- shared_copy[[name]]
+  age_ms <- if (is.null(copy)) Inf else
+    as.numeric(difftime(Sys.time(), copy$time, units = "secs")) * 1000
+  if (age_ms < REFRESH_MS - 500) return(copy$data)     # still fresh enough
+
+  data <- tryCatch(storage_read(name), error = function(e) NULL)
+  if (is.null(data)) {
+    if (!is.null(copy)) return(copy$data)            # Google failed: keep the last copy
+    stop("The data couldn't be loaded. Please reload the page in a minute.")
+  }
+  shared_copy[[name]] <- list(data = data, time = Sys.time())
+  data
+}
+
+# Throw away the shared copy of a table, so the next read gets it fresh
+storage_forget <- function(name) {
+  if (exists(name, envir = shared_copy, inherits = FALSE)) rm(list = name, envir = shared_copy)
+}
+
+
+# ---- Button clicks that can't crash the page ---------------------------------
+#
+# If reading or saving fails in the middle of a button click (e.g. Google is
+# slow or over its limit), Shiny would normally close that person's page.
+# Wrapping the click's code in try_or_tell() shows a message instead.
+#   what - what the click was doing, e.g. "save the payout"
+try_or_tell <- function(what, expr) {
+  tryCatch(expr, error = function(e) {
+    warning("Couldn't ", what, ": ", conditionMessage(e))
+    showNotification(paste0("Couldn't ", what, ", because the data couldn't be reached. ",
+                            "Nothing was changed. Please try again in a minute."),
+                     type = "error", duration = 10)
+    invisible(NULL)
+  })
 }

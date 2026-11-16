@@ -136,6 +136,15 @@ send_email <- function(to, subject, body, dry_run = FALSE) {
 #              payout, named like c(n20 = 3, n10 = 2, n5 = 0, n1 = 14)
 #   details  - extra lines for the email body
 check_alerts <- function(table, balance, period, left = NULL, details = character()) {
+  # The payout is already saved at this point, so a problem here must not
+  # look like the payout failed
+  tryCatch(check_alerts_now(table, balance, period, left, details), error = function(e) {
+    warning("Alert check failed: ", conditionMessage(e))
+    showNotification("The payout is saved, but the low-balance check couldn't run.", type = "warning")
+  })
+}
+
+check_alerts_now <- function(table, balance, period, left, details) {
   s <- read_alert_settings(table, names(left))
   if (!s$total_on && !s$bills_on) return(invisible())   # both boxes unticked
 
@@ -199,9 +208,9 @@ alert_server <- function(input, output, session, table, is_manager, bills = NULL
   settings <- reactiveVal(NULL)
 
   # Load the saved settings when the manager unlocks the panel
-  observeEvent(is_manager(), {
+  observeEvent(is_manager(), try_or_tell("load the email settings", {
     if (is_manager()) settings(read_alert_settings(table, bill_cols))
-  })
+  }))
 
   output$alert_panel <- renderUI({
     s <- settings()
@@ -266,7 +275,7 @@ alert_server <- function(input, output, session, table, is_manager, bills = NULL
     NULL
   }
 
-  observeEvent(input$alert_save, {
+  observeEvent(input$alert_save, try_or_tell("save the email settings", {
     req(is_manager())
     problem <- form_problem()
     if (!is.null(problem)) return(showNotification(problem, type = "error"))
@@ -282,9 +291,9 @@ alert_server <- function(input, output, session, table, is_manager, bills = NULL
       showNotification(if (s$total_on || s$bills_on) "Email settings saved." else "Low-balance emails turned off.",
                        type = "message")
     }
-  })
+  }))
 
-  observeEvent(input$alert_test, {
+  observeEvent(input$alert_test, try_or_tell("send the test email", {
     req(is_manager())
     emails <- split_emails(input$alert_email)
     if (length(emails) == 0 || !all(looks_like_email(emails)))
@@ -296,5 +305,5 @@ alert_server <- function(input, output, session, table, is_manager, bills = NULL
                        "This is a test from the Lab Cash app. Low-balance emails will come from this address.")
     if (sent) showNotification(paste("Test email sent to", paste(emails, collapse = ", ")), type = "message")
     else      showNotification("The test email couldn't be sent. Check REGISTER_MAIL_URL and REGISTER_MAIL_SECRET in .Renviron.", type = "error")
-  })
+  }))
 }
