@@ -202,6 +202,7 @@ ui <- page_fluid(
     .app-header h2, .app-header p { margin: 0; }
     .app-logo   { width: 96px; height: 96px; flex-shrink: 0; }
     .panel-heading { font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; }
+    .payout-card { max-width: 560px; }
     /* ---- The bills in the payout form, drawn like banknotes ---- */
     .bill-grid { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
     .bill-note {
@@ -286,24 +287,16 @@ ui <- page_fluid(
     )
   ),
 
-  layout_columns(
-    col_widths = c(5, 7),
-
-    # Left: the balance
-    card(
-      card_header("In the register now"),
-      uiOutput("balance_box")
-    ),
-
-    # Right: the form RAs use
-    card(
-      card_header("Record a payout"),
-      p(class = "muted", "Click + / − for each bill you took out, or click the number and type it."),
-      div(class = "bill-grid", lapply(BILLS, bill_stepper)),
-      div(class = "payout-total", textOutput("payout_total", inline = TRUE)),
-      dateInput("date", "Date paid out"),
-      actionButton("add", "Record payout", class = "btn-primary")
-    )
+  # The form RAs use. (What's in the register is only shown in the lab
+  # manager panel below, so RAs don't see how much cash there is.)
+  card(
+    class = "payout-card",
+    card_header("Record a payout"),
+    p(class = "muted", "Click + / − for each bill you took out, or click the number and type it."),
+    div(class = "bill-grid", lapply(BILLS, bill_stepper)),
+    div(class = "payout-total", textOutput("payout_total", inline = TRUE)),
+    dateInput("date", "Date paid out"),
+    actionButton("add", "Record payout", class = "btn-primary")
   ),
 
   card(
@@ -513,6 +506,10 @@ server <- function(input, output, session) {
                    value = NA, min = 0, step = 1)
     })
     tagList(
+      h5(class = "panel-heading", "In the register now"),
+      uiOutput("balance_box"),
+      hr(),
+      h5(class = "panel-heading", "Recount the register"),
       uiOutput("expected_text"),
       do.call(layout_columns, c(list(col_widths = rep(3, length(BILLS))), count_boxes)),
       div(class = "payout-total", textOutput("counted_total", inline = TRUE)),
