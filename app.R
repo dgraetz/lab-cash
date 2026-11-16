@@ -131,7 +131,7 @@ ui <- page_fluid(
   # Header: lab logo (from the www folder) next to the title
   div(class = "app-header",
     # The logo links to the lab website (opens in a new tab)
-    tags$a(href = "https://blogs.uoregon.edu/cognitivedynamics/", target = "_blank",
+    tags$a(href = "https://blogs.uoregon.edu/cognitivedynamics/home/", target = "_blank",
            rel = "noopener", title = "Cognitive Dynamics Lab website",
            img(src = "logo.svg", alt = "Cognitive Dynamics Lab logo", class = "app-logo")),
     div(
