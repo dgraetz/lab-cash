@@ -58,6 +58,7 @@ source("access.R", local = TRUE)    # only open through the secret link (if one 
 PAYOUTS <- "payouts"   # name of the payouts table (sheet tab / CSV file)
 COUNTS  <- "counts"    # name of the recounts table
 ALERTS  <- "alerts"    # name of the low-balance email settings table
+storage_share(c(PAYOUTS, COUNTS))   # always refresh these two together, in one request
 
 
 # ---- 2. Helper functions for reading and writing the CSV files ---------------
@@ -115,8 +116,8 @@ setup_tables()
 ui <- page_fluid(
   idle_ui(),                       # pause the page when nobody uses it (idle.R)
   theme = bs_theme(version = 5, primary = "#2f6b55",
-                   base_font = font_google("IBM Plex Sans", wght = c(400, 700)),
-                   code_font = font_google("IBM Plex Mono")),
+                   base_font = font_google("IBM Plex Sans", wght = c(400, 700), local = FALSE),
+                   code_font = font_google("IBM Plex Mono", local = FALSE)),   # local = FALSE: the browser loads the fonts (faster startup)
   tags$head(tags$style("
     .balance   { font-family: 'IBM Plex Mono', monospace; font-size: 3rem;
                  font-weight: 600; line-height: 1.1; }

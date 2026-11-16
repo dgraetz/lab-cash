@@ -66,30 +66,61 @@ try_twice <- function(expr_fn) {
 
 # ---- The four functions the apps use -----------------------------------------
 
+# The names of the sheet's tabs, looked up once (saves a Google request per table at startup)
+existing_tabs <- NULL
+
 # Make the table with just its column names, if it doesn't exist yet.
 storage_create <- function(name, columns) {
   if (USE_SHEETS) {
-    if (!(name %in% sheet_names(SHEET_ID))) {
+    if (is.null(existing_tabs)) existing_tabs <<- sheet_names(SHEET_ID)
+    if (!(name %in% existing_tabs)) {
       sheet_add(SHEET_ID, sheet = name)
       header <- as.data.frame(t(columns))          # one row: the column names
       range_write(SHEET_ID, header, sheet = name, col_names = FALSE)
+      existing_tabs <<- c(existing_tabs, name)
     }
   } else if (!file.exists(csv_path(name))) {
     writeLines(paste0('"', columns, '"', collapse = ","), csv_path(name))
   }
 }
 
-# Read a whole table. Every column comes back as text.
-storage_read <- function(name) {
+# Read several whole tables at once (with a Google Sheet: in ONE request,
+# which is much faster than one table at a time). Every column comes back as
+# text. Returns a list of data frames, named like the tables.
+storage_read_many <- function(names) {
   if (USE_SHEETS) {
-    d <- try_twice(function() read_sheet(SHEET_ID, sheet = name, col_types = "c"))
-    d <- as.data.frame(d)
+    tables <- try_twice(function() read_tabs_at_once(names))
   } else {
-    d <- read.csv(csv_path(name), stringsAsFactors = FALSE, colClasses = "character")
+    tables <- lapply(names, function(name)
+      read.csv(csv_path(name), stringsAsFactors = FALSE, colClasses = "character"))
   }
   # Skip rows that are completely empty. They appear when someone clears rows in
   # the Google Sheet instead of deleting them, and would otherwise break the app.
-  d[rowSums(!is.na(d) & d != "") > 0, , drop = FALSE]
+  tables <- lapply(tables, function(d) d[rowSums(!is.na(d) & d != "") > 0, , drop = FALSE])
+  setNames(tables, names)
+}
+
+# Read one whole table
+storage_read <- function(name) storage_read_many(name)[[1]]
+
+# Ask Google for several tabs in a single request ("values:batchGet") and turn
+# each into a data frame: the first row holds the column names, empty cells
+# become NA, and everything is text (as it's shown in the sheet).
+read_tabs_at_once <- function(names) {
+  ranges <- setNames(as.list(paste0("'", names, "'")), rep("ranges", length(names)))
+  url <- paste0("https://sheets.googleapis.com/v4/spreadsheets/", SHEET_ID, "/values:batchGet")
+  response <- httr::GET(url, query = ranges, gs4_token(), httr::timeout(20))
+  answer <- gargle::response_process(response)
+  lapply(answer$valueRanges, function(range) {
+    rows <- lapply(range$values, function(r) vapply(r, as.character, character(1)))
+    header <- rows[[1]]
+    body <- rows[-1]
+    cells <- lapply(body, function(r) { r <- c(r, rep(NA, length(header) - length(r)))[seq_along(header)]; r[r == ""] <- NA; r })
+    d <- as.data.frame(matrix(unlist(cells), ncol = length(header), byrow = TRUE,
+                              dimnames = list(NULL, header)), stringsAsFactors = FALSE)
+    if (length(body) == 0) d <- as.data.frame(setNames(replicate(length(header), character(), simplify = FALSE), header))
+    d
+  })
 }
 
 # Add one row (a one-row data frame) to the end of a table.
@@ -151,19 +182,26 @@ storage_replace <- function(name, data) {
 
 shared_copy <- new.env()
 
+# Tables that are always refreshed together, in one request (set by the app
+# with storage_share(), e.g. the payouts and the recounts)
+shared_tables <- character()
+storage_share <- function(names) shared_tables <<- union(shared_tables, names)
+
 storage_read_shared <- function(name) {
   copy <- shared_copy[[name]]
   age_ms <- if (is.null(copy)) Inf else
     as.numeric(difftime(Sys.time(), copy$time, units = "secs")) * 1000
   if (age_ms < REFRESH_MS - 500) return(copy$data)     # still fresh enough
 
-  data <- tryCatch(storage_read(name), error = function(e) NULL)
+  names <- union(name, shared_tables)
+  data <- tryCatch(storage_read_many(names), error = function(e) NULL)
   if (is.null(data)) {
     if (!is.null(copy)) return(copy$data)            # Google failed: keep the last copy
     stop("The data couldn't be loaded. Please reload the page in a minute.")
   }
-  shared_copy[[name]] <- list(data = data, time = Sys.time())
-  data
+  now <- Sys.time()
+  for (n in names) shared_copy[[n]] <- list(data = data[[n]], time = now)
+  data[[name]]
 }
 
 # Throw away the shared copy of a table, so the next read gets it fresh

@@ -65,6 +65,7 @@ source("access.R", local = TRUE)    # only open through the secret link (if one 
 PAYOUTS <- "bills_payouts"   # name of the payouts table (sheet tab / CSV file)
 COUNTS  <- "bills_counts"    # name of the recounts table
 ALERTS  <- "bills_alerts"    # name of the low-balance email settings table
+storage_share(c(PAYOUTS, COUNTS))   # always refresh these two together, in one request
 
 # Column names for the bill counts: "n20", "n10", "n5", "n1"
 BILL_COLS <- paste0("n", BILLS)
@@ -178,8 +179,8 @@ bill_stepper <- function(bill) {
 ui <- page_fluid(
   idle_ui(),                       # pause the page when nobody uses it (idle.R)
   theme = bs_theme(version = 5, primary = "#2f6b55",
-                   base_font = font_google("IBM Plex Sans", wght = c(400, 700)),
-                   code_font = font_google("IBM Plex Mono")),
+                   base_font = font_google("IBM Plex Sans", wght = c(400, 700), local = FALSE),
+                   code_font = font_google("IBM Plex Mono", local = FALSE)),   # local = FALSE: the browser loads the fonts (faster startup)
   # Engraved-style font for the banknotes, and a small script that outlines a
   # bill once you've added one or more of it
   tags$head(
