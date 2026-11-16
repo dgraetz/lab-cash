@@ -193,14 +193,14 @@ ui <- page_fluid(
     .app-logo   { width: 96px; height: 96px; flex-shrink: 0; }
     .panel-heading { font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; }
     /* ---- The bills in the payout form, drawn like banknotes ---- */
-    .bill-grid { display: flex; flex-direction: column; gap: 14px; margin-bottom: 8px; }
+    .bill-grid { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
     .bill-note {
       --paper: #e7efe1;                      /* paper colour, tinted per bill below */
       --ink:   #2f5a45;                      /* engraving colour */
-      position: relative; width: 280px; max-width: 100%;
+      position: relative; width: 230px; max-width: 100%;
       aspect-ratio: 2.35 / 1;                /* a US bill is 6.14 x 2.61 in */
-      padding: 14px 18px; border-radius: 6px; color: var(--ink);
-      display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 6px;
+      padding: 10px 14px; border-radius: 5px; color: var(--ink);
+      display: grid; grid-template-columns: 66px 1fr; align-items: center; gap: 4px;
       /* light patch + fine crosshatched engraving lines + paper */
       background:
         radial-gradient(ellipse 60% 80% at 28% 50%, rgba(255,255,255,.75), transparent 70%),
@@ -227,26 +227,26 @@ ui <- page_fluid(
         0 6px 14px rgba(0,0,0,.12); }
     .bill-note.has-bills { outline-color: var(--ink); }   /* bills you've added */
     .bill-note .corner { position: absolute; font-family: 'Cinzel', Georgia, serif;
-      font-weight: 700; font-size: 0.8rem; line-height: 1; }
-    .bill-note .top-left     { top: 13px;    left: 15px; }
-    .bill-note .top-right    { top: 13px;    right: 15px; }
-    .bill-note .bottom-left  { bottom: 13px; left: 15px; }
-    .bill-note .bottom-right { bottom: 13px; right: 15px; }
-    .medallion { width: 72px; height: 72px; border-radius: 50%; justify-self: center;
+      font-weight: 700; font-size: 0.68rem; line-height: 1; }
+    .bill-note .top-left     { top: 11px;    left: 12px; }
+    .bill-note .top-right    { top: 11px;    right: 12px; }
+    .bill-note .bottom-left  { bottom: 11px; left: 12px; }
+    .bill-note .bottom-right { bottom: 11px; right: 12px; }
+    .medallion { width: 56px; height: 56px; border-radius: 50%; justify-self: center;
       display: grid; place-items: center;
-      font-family: 'Cinzel', Georgia, serif; font-weight: 700; font-size: 1.35rem;
+      font-family: 'Cinzel', Georgia, serif; font-weight: 700; font-size: 1.05rem;
       background:
         repeating-radial-gradient(circle, rgba(47,90,69,.10) 0 1px, transparent 1px 4px),
         rgba(255,255,255,.6);
       border: 2px solid var(--ink);
       box-shadow: 0 0 0 3px var(--paper), 0 0 0 4px rgba(47,90,69,.45); }
-    .bill-body { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .bill-body { display: flex; flex-direction: column; align-items: center; gap: 4px; }
     .bill-word { font-family: 'Cinzel', Georgia, serif; font-weight: 700;
-      font-size: 0.68rem; letter-spacing: .14em; text-align: center; }
-    .stepper   { display: flex; align-items: center; gap: 8px; }
-    .bill-count{ font-family: 'IBM Plex Mono', monospace; font-size: 1.25rem;
-                 font-weight: 600; width: 2rem; text-align: center; }
-    .btn-step  { width: 2.2rem; font-size: 1.1rem; padding: 0; background: #fff;
+      font-size: 0.58rem; letter-spacing: .12em; text-align: center; }
+    .stepper   { display: flex; align-items: center; gap: 6px; }
+    .bill-count{ font-family: 'IBM Plex Mono', monospace; font-size: 1.05rem;
+                 font-weight: 600; width: 1.6rem; text-align: center; }
+    .btn-step  { width: 1.9rem; font-size: 0.95rem; line-height: 1.5; padding: 0; background: #fff;
                  border-color: rgba(47,90,69,.5); color: var(--ink); }
     .btn-step:hover { background: var(--ink); color: #fff; }
     @media (prefers-reduced-motion: reduce) { .bill-note { transition: none; } }
