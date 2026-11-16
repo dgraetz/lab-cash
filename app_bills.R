@@ -137,17 +137,32 @@ setup_tables()
 
 # ---- 3. The user interface ---------------------------------------------------
 
+# The value of each bill in words, printed on the banknote
+BILL_WORDS <- c(`1` = "ONE DOLLAR", `2` = "TWO DOLLARS", `5` = "FIVE DOLLARS",
+                `10` = "TEN DOLLARS", `20` = "TWENTY DOLLARS", `50` = "FIFTY DOLLARS",
+                `100` = "ONE HUNDRED DOLLARS")
+bill_words <- function(bill) {
+  w <- BILL_WORDS[as.character(bill)]
+  if (is.na(w)) paste(bill, "DOLLARS") else unname(w)
+}
+
 # One bill in the payout form, drawn like a banknote (same proportions as a
-# US bill), with the value in the corners and "[-]  0  [+]" in the middle
+# US bill): a round medallion with the value on the left, the value in words
+# and "[-]  0  [+]" on the right, and the value in each corner.
 bill_stepper <- function(bill) {
-  div(class = "bill-note",
+  div(class = "bill-note", id = paste0("note_", bill), `data-bill` = bill,
     span(class = "corner top-left", bill),
+    span(class = "corner top-right", bill),
+    span(class = "corner bottom-left", bill),
     span(class = "corner bottom-right", bill),
-    span(class = "bill-label", paste0(CURRENCY, bill)),
-    div(class = "stepper",
-      actionButton(paste0("minus_", bill), "−", class = "btn-outline-secondary btn-step"),
-      span(class = "bill-count", textOutput(paste0("count_", bill), inline = TRUE)),
-      actionButton(paste0("plus_", bill), "+", class = "btn-outline-secondary btn-step")
+    div(class = "medallion", paste0(CURRENCY, bill)),
+    div(class = "bill-body",
+      span(class = "bill-word", bill_words(bill)),
+      div(class = "stepper",
+        actionButton(paste0("minus_", bill), "−", class = "btn-outline-secondary btn-step"),
+        span(class = "bill-count", textOutput(paste0("count_", bill), inline = TRUE)),
+        actionButton(paste0("plus_", bill), "+", class = "btn-outline-secondary btn-step")
+      )
     )
   )
 }
@@ -156,6 +171,17 @@ ui <- page_fluid(
   theme = bs_theme(version = 5, primary = "#2f6b55",
                    base_font = font_google("IBM Plex Sans", wght = c(400, 700)),
                    code_font = font_google("IBM Plex Mono")),
+  # Engraved-style font for the banknotes, and a small script that outlines a
+  # bill once you've added one or more of it
+  tags$head(
+    tags$link(rel = "stylesheet",
+              href = "https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap"),
+    tags$script(HTML("
+      Shiny.addCustomMessageHandler('bill-count', function(m) {
+        var note = document.getElementById('note_' + m.bill);
+        if (note) note.classList.toggle('has-bills', m.n > 0);
+      });"))
+  ),
   tags$head(tags$style("
     .balance   { font-family: 'IBM Plex Mono', monospace; font-size: 3rem;
                  font-weight: 600; line-height: 1.1; }
@@ -166,25 +192,64 @@ ui <- page_fluid(
     .app-header h2, .app-header p { margin: 0; }
     .app-logo   { width: 96px; height: 96px; flex-shrink: 0; }
     .panel-heading { font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; }
-    /* The bills in the payout form, drawn like banknotes */
-    .bill-grid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 8px; }
-    .bill-note { position: relative; width: 220px; max-width: 100%;
-                 aspect-ratio: 2.35 / 1;              /* a US bill is 6.14 x 2.61 in */
-                 background: #eef3ea; color: #2f4f3f;
-                 border: 2px solid #8aa596; border-radius: 4px;
-                 box-shadow: inset 0 0 0 5px #eef3ea, inset 0 0 0 6px #b9cbbf;
-                 display: flex; flex-direction: column; align-items: center;
-                 justify-content: center; gap: 4px; }
-    .bill-note .corner { position: absolute; font-family: 'IBM Plex Mono', monospace;
-                 font-weight: 700; font-size: 0.85rem; color: #5d7a69; }
-    .bill-note .top-left     { top: 9px; left: 12px; }
-    .bill-note .bottom-right { bottom: 9px; right: 12px; }
-    .bill-label{ font-family: 'IBM Plex Mono', monospace; font-weight: 700;
-                 font-size: 1.3rem; line-height: 1; }
-    .stepper   { display: flex; align-items: center; gap: 10px; }
+    /* ---- The bills in the payout form, drawn like banknotes ---- */
+    .bill-grid { display: flex; flex-direction: column; gap: 14px; margin-bottom: 8px; }
+    .bill-note {
+      --paper: #e7efe1;                      /* paper colour, tinted per bill below */
+      --ink:   #2f5a45;                      /* engraving colour */
+      position: relative; width: 280px; max-width: 100%;
+      aspect-ratio: 2.35 / 1;                /* a US bill is 6.14 x 2.61 in */
+      padding: 14px 18px; border-radius: 6px; color: var(--ink);
+      display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 6px;
+      /* light patch + fine crosshatched engraving lines + paper */
+      background:
+        radial-gradient(ellipse 60% 80% at 28% 50%, rgba(255,255,255,.75), transparent 70%),
+        repeating-linear-gradient( 45deg, rgba(47,90,69,.06) 0 1px, transparent 1px 5px),
+        repeating-linear-gradient(-45deg, rgba(47,90,69,.06) 0 1px, transparent 1px 5px),
+        var(--paper);
+      /* outer edge, then two thin printed frames inside it */
+      border: 1px solid rgba(47,90,69,.55);
+      box-shadow:
+        inset 0 0 0 4px var(--paper), inset 0 0 0 5px rgba(47,90,69,.55),
+        inset 0 0 0 8px var(--paper), inset 0 0 0 9px rgba(47,90,69,.25),
+        0 1px 2px rgba(0,0,0,.08);
+      transition: transform .15s ease, box-shadow .15s ease, outline-color .15s ease;
+      outline: 3px solid transparent; outline-offset: 3px;
+    }
+    .bill-note[data-bill='20'] { --paper: #e6eedf; }
+    .bill-note[data-bill='10'] { --paper: #efe9dc; }
+    .bill-note[data-bill='5']  { --paper: #e9e5ee; }
+    .bill-note[data-bill='1']  { --paper: #e3ece4; }
+    .bill-note:hover { transform: translateY(-2px);
+      box-shadow:
+        inset 0 0 0 4px var(--paper), inset 0 0 0 5px rgba(47,90,69,.55),
+        inset 0 0 0 8px var(--paper), inset 0 0 0 9px rgba(47,90,69,.25),
+        0 6px 14px rgba(0,0,0,.12); }
+    .bill-note.has-bills { outline-color: var(--ink); }   /* bills you've added */
+    .bill-note .corner { position: absolute; font-family: 'Cinzel', Georgia, serif;
+      font-weight: 700; font-size: 0.8rem; line-height: 1; }
+    .bill-note .top-left     { top: 13px;    left: 15px; }
+    .bill-note .top-right    { top: 13px;    right: 15px; }
+    .bill-note .bottom-left  { bottom: 13px; left: 15px; }
+    .bill-note .bottom-right { bottom: 13px; right: 15px; }
+    .medallion { width: 72px; height: 72px; border-radius: 50%; justify-self: center;
+      display: grid; place-items: center;
+      font-family: 'Cinzel', Georgia, serif; font-weight: 700; font-size: 1.35rem;
+      background:
+        repeating-radial-gradient(circle, rgba(47,90,69,.10) 0 1px, transparent 1px 4px),
+        rgba(255,255,255,.6);
+      border: 2px solid var(--ink);
+      box-shadow: 0 0 0 3px var(--paper), 0 0 0 4px rgba(47,90,69,.45); }
+    .bill-body { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .bill-word { font-family: 'Cinzel', Georgia, serif; font-weight: 700;
+      font-size: 0.68rem; letter-spacing: .14em; text-align: center; }
+    .stepper   { display: flex; align-items: center; gap: 8px; }
     .bill-count{ font-family: 'IBM Plex Mono', monospace; font-size: 1.25rem;
-                 width: 2.5rem; text-align: center; }
-    .btn-step  { width: 2.5rem; font-size: 1.1rem; padding: 0; background: #fff; }
+                 font-weight: 600; width: 2rem; text-align: center; }
+    .btn-step  { width: 2.2rem; font-size: 1.1rem; padding: 0; background: #fff;
+                 border-color: rgba(47,90,69,.5); color: var(--ink); }
+    .btn-step:hover { background: var(--ink); color: #fff; }
+    @media (prefers-reduced-motion: reduce) { .bill-note { transition: none; } }
     .payout-total { font-family: 'IBM Plex Mono', monospace; font-size: 1.5rem;
                     font-weight: 600; margin-block: 8px; }
     .bill-table td, .bill-table th { padding: 2px 12px 2px 0;
@@ -318,6 +383,9 @@ server <- function(input, output, session) {
     })
 
     output[[paste0("count_", bill)]] <- renderText(picked()[i])
+
+    # Tell the page how many of this bill are picked, so it can outline the note
+    observe(session$sendCustomMessage("bill-count", list(bill = bill, n = picked()[[i]])))
   })
 
   output$payout_total <- renderText(paste("Total:", money(bills_value(picked()))))
