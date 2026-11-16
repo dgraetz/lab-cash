@@ -1,0 +1,16 @@
+# Secrets: never upload these
+google-key.json
+.Renviron
+
+# Lab data (lives in the Google Sheet or local CSVs, not in the code)
+data/
+
+# RStudio and shinyapps.io working files
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+rsconnect/
+
+# macOS
+.DS_Store
