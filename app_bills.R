@@ -137,13 +137,18 @@ setup_tables()
 
 # ---- 3. The user interface ---------------------------------------------------
 
-# One row of the payout form: "$20   [-]  0  [+]"
+# One bill in the payout form, drawn like a banknote (same proportions as a
+# US bill), with the value in the corners and "[-]  0  [+]" in the middle
 bill_stepper <- function(bill) {
-  div(class = "stepper",
+  div(class = "bill-note",
+    span(class = "corner top-left", bill),
+    span(class = "corner bottom-right", bill),
     span(class = "bill-label", paste0(CURRENCY, bill)),
-    actionButton(paste0("minus_", bill), "−", class = "btn-outline-secondary btn-step"),
-    span(class = "bill-count", textOutput(paste0("count_", bill), inline = TRUE)),
-    actionButton(paste0("plus_", bill), "+", class = "btn-outline-secondary btn-step")
+    div(class = "stepper",
+      actionButton(paste0("minus_", bill), "−", class = "btn-outline-secondary btn-step"),
+      span(class = "bill-count", textOutput(paste0("count_", bill), inline = TRUE)),
+      actionButton(paste0("plus_", bill), "+", class = "btn-outline-secondary btn-step")
+    )
   )
 }
 
@@ -161,12 +166,25 @@ ui <- page_fluid(
     .app-header h2, .app-header p { margin: 0; }
     .app-logo   { width: 96px; height: 96px; flex-shrink: 0; }
     .panel-heading { font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; }
-    .stepper   { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .bill-label{ font-family: 'IBM Plex Mono', monospace; font-weight: 600;
-                 width: 3.5rem; }
+    /* The bills in the payout form, drawn like banknotes */
+    .bill-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+    .bill-note { position: relative; width: 220px; max-width: 100%;
+                 aspect-ratio: 2.35 / 1;              /* a US bill is 6.14 x 2.61 in */
+                 background: #eef3ea; color: #2f4f3f;
+                 border: 2px solid #8aa596; border-radius: 4px;
+                 box-shadow: inset 0 0 0 5px #eef3ea, inset 0 0 0 6px #b9cbbf;
+                 display: flex; flex-direction: column; align-items: center;
+                 justify-content: center; gap: 4px; }
+    .bill-note .corner { position: absolute; font-family: 'IBM Plex Mono', monospace;
+                 font-weight: 700; font-size: 0.85rem; color: #5d7a69; }
+    .bill-note .top-left     { top: 9px; left: 12px; }
+    .bill-note .bottom-right { bottom: 9px; right: 12px; }
+    .bill-label{ font-family: 'IBM Plex Mono', monospace; font-weight: 700;
+                 font-size: 1.3rem; line-height: 1; }
+    .stepper   { display: flex; align-items: center; gap: 10px; }
     .bill-count{ font-family: 'IBM Plex Mono', monospace; font-size: 1.25rem;
                  width: 2.5rem; text-align: center; }
-    .btn-step  { width: 2.5rem; font-size: 1.1rem; padding: 2px 0; }
+    .btn-step  { width: 2.5rem; font-size: 1.1rem; padding: 0; background: #fff; }
     .payout-total { font-family: 'IBM Plex Mono', monospace; font-size: 1.5rem;
                     font-weight: 600; margin-block: 8px; }
     .bill-table td, .bill-table th { padding: 2px 12px 2px 0;
@@ -195,7 +213,7 @@ ui <- page_fluid(
     card(
       card_header("Record a payout"),
       p(class = "muted", "Click + for each bill you took out."),
-      lapply(BILLS, bill_stepper),
+      div(class = "bill-grid", lapply(BILLS, bill_stepper)),
       div(class = "payout-total", textOutput("payout_total", inline = TRUE)),
       dateInput("date", "Date paid out"),
       actionButton("add", "Record payout", class = "btn-primary")
