@@ -1,63 +1,70 @@
-# Setting up the low-balance email
+# Low-balance emails
 
 The app can email the lab manager when the register runs low. This is optional:
 everything else works without it.
 
-There are two parts:
+## Choosing when to get an email
 
-1. **Once, by whoever runs the app:** give the app an email account to send from
-   (this page).
-2. **Any time, by the lab manager:** turn the email on, choose who gets it and the
-   amount that triggers it, in the app's **Lab manager** panel.
+In the app, expand the **Lab manager** panel, enter the PIN, and go to
+**Low-balance emails** at the bottom:
 
-## 1. Give the app an email account to send from
-
-We use the lab's Gmail account (e.g. the Dynamic Control account). Gmail doesn't
-let apps log in with the normal password, so you make a separate **app password**
-just for this app.
-
-1. Sign in to the lab Gmail account and go to <https://myaccount.google.com/security>.
-2. Under "How you sign in to Google", turn on **2-Step Verification** if it isn't on
-   yet. Google requires it for app passwords.
-3. Go to <https://myaccount.google.com/apppasswords>.
-4. Type a name like `Lab Cash app` and click **Create**.
-5. Google shows a 16-letter password once. Copy it.
-6. Open the `.Renviron` file in the app folder and add two lines (no spaces in the password):
-   ```
-   REGISTER_SMTP_USER=the.lab.account@gmail.com
-   REGISTER_SMTP_PASSWORD=abcdefghijklmnop
-   ```
-7. Restart R (Session → Restart R).
-
-To send from a university account instead of Gmail, ask IT for the SMTP server and
-port and add them too:
-```
-REGISTER_SMTP_HOST=smtp.example.edu
-REGISTER_SMTP_PORT=465
-```
-
-## 2. Turn it on in the app
-
-1. Open the app, expand **Lab manager**, and enter the PIN.
-2. At the bottom, under **Low-balance email**:
-   - tick **Email me when the register runs low**
-   - enter the address (several addresses are separated by commas)
-   - enter the amount, e.g. `50` for "when less than $50 is left"
-3. Click **Save email settings**, then **Send a test email** to check that it arrives.
+1. Tick **Send me an email when the register runs low**.
+2. Enter the address. Separate several addresses with commas.
+3. Fill in the limits you want and leave the others empty:
+   - **Email when the total drops below** a dollar amount, e.g. `100`.
+   - In the bills version, also **per bill type**: e.g. `20` under **$1 bills**
+     means "email me when 20 or fewer $1 bills are left".
+4. Click **Save email settings**, then **Send a test email** to check that it arrives.
    Check the spam folder the first time.
 
-## How often it emails
+Each limit triggers one email. If a payout breaks several limits at once, they
+come together in one email. A limit isn't emailed about again until the register
+has been recounted.
 
-One email when a payout takes the balance below the amount. No more emails until
-the register has been recounted. After that, the next time it drops low, you get
-one email again.
+## How the emails are sent
+
+The app doesn't log in to an email account, so no password or 2-Step Verification
+is needed. A small Google Apps Script called **Lab Cash email**, on the Dynamic
+Control Google account, sends the emails from that account. Its code is in
+`mail_script.gs`.
+
+The app reaches the script through two lines in `.Renviron`:
+
+```
+REGISTER_MAIL_URL=https://script.google.com/macros/s/.../exec
+REGISTER_MAIL_SECRET=...
+```
+
+The secret code makes sure only this app can use the script. Google allows the
+account to send 100 of these emails a day.
+
+These are already set up. The steps below are only needed to set it up again,
+for example on a different Google account.
+
+### Setting it up from scratch
+
+1. Signed in to the Google account that should send the emails, go to
+   <https://script.google.com> and create a **New project**. Name it "Lab Cash email".
+2. Replace the code with the contents of `mail_script.gs` and save.
+3. Choose `setup` in the function list and click **Run**. Google asks for
+   permission. Click **Review permissions**, pick the account, then
+   **Advanced → Go to Lab Cash email (unsafe)** (that's normal for your own
+   scripts), then **Allow**.
+4. The log at the bottom shows a line `REGISTER_MAIL_SECRET=...`. Copy that line
+   into `.Renviron`.
+5. Click **Deploy → New deployment**, choose type **Web app**, set
+   **Execute as: Me** and **Who has access: Anyone**, and click **Deploy**.
+   Authorize again if asked.
+6. Copy the web app URL and add it to `.Renviron` as `REGISTER_MAIL_URL=...`.
+7. Restart R.
 
 ## Publishing to shinyapps.io
 
 Tick `alerts.R` and `.Renviron` when publishing, along with the other files.
 
-## Keep the password safe
+## Keep the secret safe
 
-The app password can send email as the lab account. It lives only in `.Renviron`,
-which is never uploaded to GitHub. If it leaks, delete it at
-<https://myaccount.google.com/apppasswords> and make a new one.
+Anyone who has both the URL and the secret can send emails from the lab account.
+They only live in `.Renviron`, which is never uploaded to GitHub. If they leak,
+delete the `SECRET` entry in the script's **Project Settings → Script
+properties**, run `setup` again, and put the new secret in `.Renviron`.

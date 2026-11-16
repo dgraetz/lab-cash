@@ -64,7 +64,7 @@ ALERTS  <- "alerts"    # name of the low-balance email settings table
 setup_tables <- function() {
   storage_create(PAYOUTS, c("id", "entered_at", "date", "amount", "period"))
   storage_create(COUNTS,  c("period", "counted_at", "amount", "expected", "note"))
-  storage_create(ALERTS,  ALERT_COLUMNS)
+  storage_create(ALERTS,  alert_columns())
 }
 
 # Read a table. Everything is read as text first, then the number columns are
@@ -244,7 +244,7 @@ server <- function(input, output, session) {
     updateNumericInput(session, "amount", value = NA)
 
     # Email the lab manager if this payout made the register run low
-    check_low_balance(ALERTS, s$balance - new_row$amount, s$period)
+    check_alerts(ALERTS, s$balance - new_row$amount, s$period)
   })
 
 

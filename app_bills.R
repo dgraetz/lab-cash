@@ -74,7 +74,7 @@ BILL_COLS <- paste0("n", BILLS)
 setup_tables <- function() {
   storage_create(PAYOUTS, c("id", "entered_at", "date", BILL_COLS, "amount", "period"))
   storage_create(COUNTS,  c("period", "counted_at", BILL_COLS, "amount", "expected", "note"))
-  storage_create(ALERTS,  ALERT_COLUMNS)
+  storage_create(ALERTS,  alert_columns(BILL_COLS))
 }
 
 # Read a table. Everything is read as text first, then the number columns are
@@ -241,7 +241,7 @@ server <- function(input, output, session) {
   is_manager <- reactiveVal(FALSE)
 
   # The low-balance email section of the manager panel (see alerts.R)
-  alert_server(input, output, session, ALERTS, is_manager)
+  alert_server(input, output, session, ALERTS, is_manager, bills = BILLS)
 
   # The bills currently picked in the payout form, e.g. c(1, 0, 1, 0)
   picked <- reactiveVal(setNames(rep(0, length(BILLS)), BILL_COLS))
@@ -351,8 +351,8 @@ server <- function(input, output, session) {
     picked(setNames(rep(0, length(BILLS)), BILL_COLS))   # clear the form
 
     # Email the lab manager if this payout made the register run low
-    check_low_balance(ALERTS, s$balance - new_row$amount, s$period,
-                      details = paste("Bills that should be left:", bills_text(s$left - p)))
+    check_alerts(ALERTS, s$balance - new_row$amount, s$period, left = s$left - p,
+                 details = paste("Bills that should be left:", bills_text(s$left - p)))
   })
 
 

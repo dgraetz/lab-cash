@@ -6,61 +6,75 @@
 #
 #  How it works
 #  ------------
-#  * In the manager panel, the lab manager can turn on a low-balance email,
-#    enter who gets it, and set the amount ("email me when the register
-#    drops below $50").
-#  * When a payout takes the balance below that amount, the app sends ONE
-#    email. It sends the next one only after the next recount, so nobody gets
+#  * In the manager panel, the lab manager can turn on low-balance emails,
+#    enter who gets them, and set limits: for the total ("email me when it
+#    drops below $50") and, in the bills version, for each bill type ("email
+#    me when 20 or fewer $1 bills are left"). Every limit is optional.
+#  * When a payout breaks one of the limits, the app sends ONE email. Each
+#    limit is emailed about only once until the next recount, so nobody gets
 #    an email for every payout while the register is low.
 #  * The settings are saved like the rest of the data (Google Sheet or CSV),
 #    so they survive restarts.
 #
 #  Sending email
 #  -------------
-#  The app sends through an email account. Its login goes in .Renviron (never
-#  in the code):
-#     REGISTER_SMTP_USER=the.lab.account@gmail.com
-#     REGISTER_SMTP_PASSWORD=the app password (see EMAIL_SETUP.md)
+#  The app doesn't log in to an email account. Instead, a small Google Apps
+#  Script on the lab's Google account sends the email for it (the script is in
+#  mail_script.gs, setup in EMAIL_SETUP.md). The app sends the script the
+#  address, subject and text, plus a secret code so nobody else can use it.
+#  The script's web address and the secret go in .Renviron (never in the code):
+#     REGISTER_MAIL_URL=https://script.google.com/macros/s/.../exec
+#     REGISTER_MAIL_SECRET=...
 #  Without these two lines everything else still works; the manager panel just
 #  says that email isn't set up.
 # =============================================================================
 
 
-# ---- Settings for the email account (read from .Renviron) --------------------
+# ---- Where to send the email request (read from .Renviron) -------------------
 
-SMTP_USER     <- Sys.getenv("REGISTER_SMTP_USER")
-SMTP_PASSWORD <- Sys.getenv("REGISTER_SMTP_PASSWORD")
-SMTP_HOST     <- Sys.getenv("REGISTER_SMTP_HOST", unset = "smtp.gmail.com")
-SMTP_PORT     <- as.integer(Sys.getenv("REGISTER_SMTP_PORT", unset = "465"))
+MAIL_URL    <- Sys.getenv("REGISTER_MAIL_URL")
+MAIL_SECRET <- Sys.getenv("REGISTER_MAIL_SECRET")
 
-EMAIL_READY <- nzchar(SMTP_USER) && nzchar(SMTP_PASSWORD)
+EMAIL_READY <- nzchar(MAIL_URL) && nzchar(MAIL_SECRET)
 
-# The columns of the alert-settings table (it only ever has one row)
-ALERT_COLUMNS <- c("enabled", "email", "below", "sent_period")
+# The columns of the alert-settings table (it only ever has one row).
+#   below          - email when the total balance drops below this (empty = off)
+#   below_n20, ... - email when this many or fewer of that bill are left
+#                    (only in the bills version; empty = off)
+#   sent_period    - the period in which emails were last sent
+#   sent           - which alerts were already sent in that period, e.g. "balance,n1"
+alert_columns <- function(bill_cols = character()) {
+  c("enabled", "email", "below", paste0("below_", bill_cols), "sent_period", "sent")
+}
 
 
 # ---- Reading and saving the alert settings -----------------------------------
 
-read_alert_settings <- function(table) {
+read_alert_settings <- function(table, bill_cols = character()) {
   d <- storage_read(table)
-  if (nrow(d) == 0) {
-    return(list(enabled = FALSE, email = "", below = NA, sent_period = NA))
-  }
+  # One value from the settings row, or NA if it's missing
+  get <- function(col) if (nrow(d) > 0 && col %in% names(d)) d[[col]][1] else NA
+  num <- function(col) suppressWarnings(as.numeric(get(col)))
+
+  sent <- get("sent")
   list(
-    enabled     = identical(d$enabled[1], "TRUE"),
-    email       = ifelse(is.na(d$email[1]), "", d$email[1]),
-    below       = suppressWarnings(as.numeric(d$below[1])),
-    sent_period = suppressWarnings(as.numeric(d$sent_period[1]))
+    enabled     = identical(get("enabled"), "TRUE"),
+    email       = if (is.na(get("email"))) "" else get("email"),
+    below       = num("below"),
+    bill_below  = vapply(bill_cols, function(b) num(paste0("below_", b)), numeric(1)),
+    sent_period = num("sent_period"),
+    sent        = if (is.na(sent) || sent == "") character() else strsplit(sent, ",")[[1]]
   )
 }
 
 save_alert_settings <- function(table, settings) {
-  storage_replace(table, data.frame(
-    enabled     = as.character(settings$enabled),
-    email       = settings$email,
-    below       = settings$below,
-    sent_period = settings$sent_period
-  ))
+  row <- data.frame(enabled = as.character(settings$enabled),
+                    email   = settings$email,
+                    below   = settings$below)
+  for (b in names(settings$bill_below)) row[[paste0("below_", b)]] <- settings$bill_below[[b]]
+  row$sent_period <- settings$sent_period
+  row$sent        <- paste(settings$sent, collapse = ",")
+  storage_replace(table, row)
 }
 
 # Split "a@x.org, b@y.org" into c("a@x.org", "b@y.org")
@@ -74,19 +88,24 @@ looks_like_email <- function(x) grepl("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:spa
 
 # ---- Sending -----------------------------------------------------------------
 
-# Send one plain-text email. Returns TRUE if it was sent, FALSE if not.
-send_email <- function(to, subject, body) {
+# Ask the Google Apps Script to send one plain-text email.
+# Returns TRUE if it was sent, FALSE if not.
+# With dry_run = TRUE the script only checks the secret and sends nothing.
+send_email <- function(to, subject, body, dry_run = FALSE) {
   if (!EMAIL_READY) return(FALSE)
   tryCatch({
-    library(emayili)
-    message <- envelope() |>
-      from(SMTP_USER) |>
-      to(to) |>
-      subject(subject) |>
-      text(body)
-    smtp <- server(host = SMTP_HOST, port = SMTP_PORT,
-                   username = SMTP_USER, password = SMTP_PASSWORD)
-    smtp(message)
+    response <- httr::POST(
+      MAIL_URL,
+      body = list(secret  = MAIL_SECRET,
+                  to      = paste(to, collapse = ","),
+                  subject = subject,
+                  body    = body,
+                  dry_run = dry_run),
+      encode = "json",
+      httr::timeout(20)
+    )
+    answer <- httr::content(response, as = "parsed", type = "application/json")
+    if (!isTRUE(answer$ok)) stop(answer$error)
     TRUE
   }, error = function(e) {
     warning("Email not sent: ", conditionMessage(e))
@@ -95,35 +114,56 @@ send_email <- function(to, subject, body) {
 }
 
 
-# ---- Checking the balance after a payout --------------------------------------
+# ---- Checking the alert rules after a payout ----------------------------------
 
 # Call this right after a payout is saved.
-#   table        - name of the alert-settings table
-#   balance      - the balance after the payout
-#   period       - the current period (changes with every recount)
-#   details      - extra lines for the email body (e.g. which bills are left)
-check_low_balance <- function(table, balance, period, details = character()) {
-  s <- read_alert_settings(table)
+#   table    - name of the alert-settings table
+#   balance  - the balance after the payout
+#   period   - the current period (changes with every recount)
+#   left     - bills version only: how many of each bill are left after the
+#              payout, named like c(n20 = 3, n10 = 2, n5 = 0, n1 = 14)
+#   details  - extra lines for the email body
+check_alerts <- function(table, balance, period, left = NULL, details = character()) {
+  s <- read_alert_settings(table, names(left))
+  if (!s$enabled) return(invisible())
 
-  if (!s$enabled || is.na(s$below)) return(invisible())   # alerts are off
-  if (balance >= s$below)            return(invisible())   # not low yet
-  if (identical(s$sent_period, period)) return(invisible()) # already sent since the last recount
+  # Alerts already emailed since the last recount aren't sent again
+  already <- if (identical(s$sent_period, period)) s$sent else character()
+
+  # Collect every rule that is now broken and hasn't been emailed yet
+  triggered <- list()
+  if (!is.na(s$below) && balance < s$below && !("balance" %in% already)) {
+    triggered$balance <- paste0("The total is down to ", money(balance),
+                                " (your limit: below ", money(s$below), ").")
+  }
+  for (b in names(s$bill_below)) {
+    limit <- s$bill_below[[b]]
+    if (!is.na(limit) && left[[b]] <= limit && !(b %in% already)) {
+      triggered[[b]] <- paste0("Only ", left[[b]], " × ", CURRENCY, sub("^n", "", b),
+                               if (left[[b]] == 1) " bill" else " bills",
+                               " left (your limit: ", limit, " or fewer).")
+    }
+  }
+  if (length(triggered) == 0) return(invisible())
 
   body <- c(
-    paste0("The lab cash register is running low: ", money(balance), " left."),
-    paste0("You asked to be emailed when it drops below ", money(s$below), "."),
+    "The lab cash register is running low:",
     "",
+    paste("-", unlist(triggered)),
+    "",
+    paste0("Total in the register: ", money(balance), "."),
     details,
     "",
-    "You'll get the next email after the register has been recounted and drops low again.",
-    "To change or turn off this email, use the Lab manager panel in the app."
+    "Each of these alerts is sent once, and again only after the register has been recounted.",
+    "To change or turn off these emails, use the Lab manager panel in the app."
   )
   sent <- send_email(split_emails(s$email),
-                     paste("Lab Cash: register is low,", money(balance), "left"),
+                     paste0("Lab Cash: register running low (", money(balance), " left)"),
                      paste(body, collapse = "\n"))
 
   if (sent) {
     s$sent_period <- period
+    s$sent        <- union(already, names(triggered))
     save_alert_settings(table, s)
   } else {
     showNotification("Saved. The low-balance email to the lab manager couldn't be sent.",
@@ -138,47 +178,75 @@ check_low_balance <- function(table, balance, period, details = character()) {
 # the app's server function.
 #   table      - name of the alert-settings table
 #   is_manager - the reactiveVal that says whether the PIN was entered
-alert_server <- function(input, output, session, table, is_manager) {
+#   bills      - bills version only: the bill types, e.g. c(20, 10, 5, 1)
+alert_server <- function(input, output, session, table, is_manager, bills = NULL) {
+
+  bill_cols <- if (length(bills) > 0) paste0("n", bills) else character()
+  bill_id   <- function(b) paste0("alert_", b)          # input id, e.g. "alert_n20"
 
   settings <- reactiveVal(NULL)
 
   # Load the saved settings when the manager unlocks the panel
   observeEvent(is_manager(), {
-    if (is_manager()) settings(read_alert_settings(table))
+    if (is_manager()) settings(read_alert_settings(table, bill_cols))
   })
 
   output$alert_panel <- renderUI({
     s <- settings()
     if (is.null(s)) return(NULL)
+
+    # One number box per bill type, side by side
+    bill_boxes <- lapply(seq_along(bill_cols), function(i) {
+      numericInput(bill_id(bill_cols[i]), paste0(CURRENCY, bills[i], " bills"),
+                   value = unname(s$bill_below[bill_cols[i]]), min = 0, step = 1)
+    })
+
     tagList(
       hr(),
-      h6("Low-balance email (optional)"),
+      h6("Low-balance emails (optional)"),
       if (!EMAIL_READY) p(class = "low",
         "Email sending isn't set up yet, so no emails will go out.",
         "See EMAIL_SETUP.md in the app folder."),
-      checkboxInput("alert_on", "Email me when the register runs low", value = s$enabled),
+      checkboxInput("alert_on", "Send me an email when the register runs low", value = s$enabled),
       textInput("alert_email", "Send it to (separate several addresses with commas)",
                 value = s$email, placeholder = "lab.manager@uoregon.edu"),
-      numericInput("alert_below", paste0("When the balance drops below (", CURRENCY, ")"),
+      p(class = "muted", "Fill in the limits you want and leave the others empty."),
+      numericInput("alert_below", paste0("Email when the total drops below (", CURRENCY, ")"),
                    value = s$below, min = 0, step = 1),
+      if (length(bill_cols) > 0) tagList(
+        p(style = "margin-bottom: 4px;", "Email when this many bills or fewer are left:"),
+        do.call(layout_columns, c(list(col_widths = rep(3, length(bill_cols))), bill_boxes))
+      ),
       div(style = "display: flex; gap: 8px; flex-wrap: wrap;",
         actionButton("alert_save", "Save email settings", class = "btn-primary"),
         actionButton("alert_test", "Send a test email", class = "btn-outline-secondary")
-      ),
-      if (s$enabled && !is.na(s$sent_period))
-        p(class = "muted", style = "margin-top: 8px;",
-          "An email has already gone out since the last recount.")
+      )
     )
   })
+
+  # The bill limits typed into the form (NA = empty)
+  form_bill_limits <- function() {
+    vapply(bill_cols, function(b) {
+      v <- input[[bill_id(b)]]
+      if (is.null(v)) NA_real_ else as.numeric(v)
+    }, numeric(1))
+  }
 
   # Check the form; returns an error message, or NULL if everything is fine
   form_problem <- function() {
     emails <- split_emails(input$alert_email)
-    if (input$alert_on && length(emails) == 0) return("Enter an email address.")
+    limits <- form_bill_limits()
     if (length(emails) > 0 && !all(looks_like_email(emails)))
       return("One of the email addresses doesn't look right.")
-    if (input$alert_on && (is.na(input$alert_below) || input$alert_below <= 0))
-      return("Enter the amount (above zero) that should trigger the email.")
+    if (!is.na(input$alert_below) && input$alert_below <= 0)
+      return("The total limit has to be above zero (or leave it empty).")
+    if (any(!is.na(limits) & (limits < 0 | limits != round(limits))))
+      return("Bill limits have to be whole numbers, 0 or more (or leave them empty).")
+    if (input$alert_on) {
+      if (length(emails) == 0) return("Enter an email address.")
+      if (is.na(input$alert_below) && all(is.na(limits)))
+        return("Fill in at least one limit, or untick the email box.")
+    }
     NULL
   }
 
@@ -188,12 +256,13 @@ alert_server <- function(input, output, session, table, is_manager) {
     if (!is.null(problem)) return(showNotification(problem, type = "error"))
 
     s <- settings()
-    s$enabled <- input$alert_on
-    s$email   <- paste(split_emails(input$alert_email), collapse = ", ")
-    s$below   <- input$alert_below
+    s$enabled    <- input$alert_on
+    s$email      <- paste(split_emails(input$alert_email), collapse = ", ")
+    s$below      <- input$alert_below
+    s$bill_below <- form_bill_limits()
     if (save_alert_settings(table, s)) {
       settings(s)
-      showNotification(if (s$enabled) "Email settings saved." else "Low-balance email turned off.",
+      showNotification(if (s$enabled) "Email settings saved." else "Low-balance emails turned off.",
                        type = "message")
     }
   })
@@ -207,8 +276,8 @@ alert_server <- function(input, output, session, table, is_manager) {
       return(showNotification("Email sending isn't set up yet (see EMAIL_SETUP.md).", type = "error"))
 
     sent <- send_email(emails, "Lab Cash: test email",
-                       "This is a test from the Lab Cash app. Low-balance emails will look like this and come from this address.")
+                       "This is a test from the Lab Cash app. Low-balance emails will come from this address.")
     if (sent) showNotification(paste("Test email sent to", paste(emails, collapse = ", ")), type = "message")
-    else      showNotification("The test email couldn't be sent. Check the email login in .Renviron.", type = "error")
+    else      showNotification("The test email couldn't be sent. Check REGISTER_MAIL_URL and REGISTER_MAIL_SECRET in .Renviron.", type = "error")
   })
 }

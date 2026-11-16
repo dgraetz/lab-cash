@@ -23,7 +23,7 @@ Two versions are in this folder:
    Then restart R (Session → Restart R).
 3. Open `app_bills.R` (or `app.R`) and click **Run App**.
 
-Needs the packages `shiny`, `bslib`, `googlesheets4` (for Google Sheets) and `emayili` (for email).
+Needs the packages `shiny`, `bslib`, `googlesheets4` (for Google Sheets) and `httr` (for email).
 
 ## Where the data is saved
 
@@ -33,8 +33,8 @@ data goes to CSV files in `data/`. Setting up the sheet is described in `GOOGLE_
 
 ## Low-balance email (optional)
 
-The lab manager can have the app email them when the register runs low. Turn it on
-in the app's **Lab manager** panel. The app first needs an email account to send
-from; see `EMAIL_SETUP.md`. The code is in `alerts.R`.
+The lab manager can have the app email them when the total or a bill type runs low. Turn it on
+in the app's **Lab manager** panel. Emails are sent by a small Google Apps Script
+(`mail_script.gs`); see `EMAIL_SETUP.md`. The app code is in `alerts.R`.
 
 `google-key.json` and `.Renviron` hold secrets and are kept out of git by `.gitignore`.
